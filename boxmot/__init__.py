@@ -11,8 +11,34 @@ from boxmot.trackers.hybridsort.hybridsort import HybridSORT
 from boxmot.trackers.ocsort.ocsort import OCSort as OCSORT
 from boxmot.trackers.strongsort.strong_sort import StrongSORT
 
-TRACKERS = ['bytetrack', 'botsort', 'strongsort', 'ocsort', 'deepocsort', 'hybridsort']
+# Following statements import modified versions 
+# of the original trackers which also use the
+# depth information from the RGBD camera for tracking.
+# Added by Debargha Bhattacharjee for the Shadow Mode project.
+# =================================================================================
+from boxmot.trackers.ocsort.ocsort_rgbd import OCSortRGBD as OCSortRGBD
+# =================================================================================
 
-__all__ = ("__version__",
-           "StrongSORT", "OCSORT", "BYTETracker", "BoTSORT", "DeepOCSORT", "HybridSORT",
-           "create_tracker", "get_tracker_config", "gsi")
+TRACKERS = [
+    "bytetrack", 
+    "botsort", 
+    "strongsort", 
+    "ocsort", 
+    "ocsort_rgbd",  # DEB
+    "deepocsort", 
+    "hybridsort"
+]
+
+__all__ = (
+    "__version__",
+    "StrongSORT", 
+    "OCSORT", 
+    "OCSortRGBD",  # DEB
+    "BYTETracker", 
+    "BoTSORT", 
+    "DeepOCSORT", 
+    "HybridSORT",
+    "create_tracker", 
+    "get_tracker_config", 
+    "gsi"
+)

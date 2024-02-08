@@ -33,42 +33,46 @@ def k_previous_obs(observations, cur_age, k):
 
 def convert_bbox_to_z(bbox):
     """
-    Takes a bounding box in the form [x1,y1,x2,y2] and returns z in the form
-      [x,y,s,r] where x,y is the centre of the box and s is the scale/area and r is
-      the aspect ratio
+    Takes a bounding box in the form [x1, y1, x2, y2] and 
+    returns z in the form [x, y, s, r] where (x, y) is the 
+    centre of the box and s is the scale/area and r is the 
+    aspect ratio
     """
-    w = bbox[2] - bbox[0]
-    h = bbox[3] - bbox[1]
-    x = bbox[0] + w / 2.0
-    y = bbox[1] + h / 2.0
+    w = bbox[2] - bbox[0]  # width
+    h = bbox[3] - bbox[1]  # height
+    x = bbox[0] + w / 2.0  # x coordinate of the centre
+    y = bbox[1] + h / 2.0  # y coordinate of the centre
     s = w * h  # scale is just area
-    r = w / float(h + 1e-6)
+    r = w / float(h + 1e-6)  # aspect ratio
     return np.array([x, y, s, r]).reshape((4, 1))
 
 
 # NOTE: Replace every call to convert_bbox_to_z() method
-# with convert_bbox_to_depth_fused_z() method.
-def convert_bbox_to_depth_fused_z(bbox, depth_mat=None):
+# with convert_bbox_to_z_with_depth() method.
+def convert_bbox_to_z_with_depth(bbox, depth_mat=None):
     """
     This method takes a bounding box in the form 
-    [u1, v1, u2, v2]), and depth matrix (depth_mat) and 
-    returns z in the form [u, v, w, s, r] where (u, v) 
-    is the centre of the box, w is the depth of the 
-    center, and s is the scale/area and r is the aspect 
-    ratio.
+    [u1, v1, u2, v2, w] (where (u1, v1) is top left corner,  
+    (u2, v2) is the bottom right corner, and w is the depth),
+    and returns z in the form [u, v, w, s, r] where (u, v) 
+    is the centre of the box, w is the depth of the center, 
+    and s is the scale/area and r is the aspect ratio.
     """ 
     # z will be of the form [u, v, s, r]
     # where (u, v) is the center of the box.
+    centre_depth = bbox[4]
+    bbox = np.delete(bbox, 4)
     z = convert_bbox_to_z(bbox)
-    center_depth = depth_mat[z[0], z[1]]
-    z = np.insert(z, 2, center_depth)
+    z = np.insert(z, 2, centre_depth)
     return z
 
 
 def convert_x_to_bbox(x, score=None):
     """
-    Takes a bounding box in the centre form [x,y,s,r] and returns it in the form
-      [x1,y1,x2,y2] where x1,y1 is the top left and x2,y2 is the bottom right
+    Takes a bounding box in the centre form [x, y, s, r] 
+    and returns it in the form [x1, y1, x2, y2] where 
+    (x1, y1) is the top left and (x2, y2) is the bottom 
+    right.
     """
     w = np.sqrt(x[2] * x[3])
     h = x[2] / w
@@ -90,16 +94,18 @@ def convert_x_to_bbox(x, score=None):
 
 
 # NOTE: Replace every call to convert_x_to_bbox() method
-# with convert_depth_fused_x_to_bbox() method.
-def convert_depth_fused_x_to_bbox(x, score=None):
+# with convert_x_to_bbox_with_depth() method.
+def convert_x_to_bbox_with_depth(x, score=None):
     """
     This method takes a bounding box in the centre form
     [u, v, w, s, r] and returns it in the form 
-    [u1, v1, u2, v2] where (u1, v1) is the top left and 
-    (u2, v2) is the bottom right.
+    [u1, v1, u2, v2, w] where (u1, v1) is the top left,  
+    (u2, v2) is the bottom right, and w is the centre.
     """
+    centre_depth = x[2]
     x = np.delete(x, 2)
     bbox = convert_x_to_bbox(x, score=None)
+    bbox = np.insert(bbox, 2, centre_depth)
     return bbox
 
 
@@ -108,6 +114,26 @@ def speed_direction(bbox1, bbox2):
     cx2, cy2 = (bbox2[0] + bbox2[2]) / 2.0, (bbox2[1] + bbox2[3]) / 2.0
     speed = np.array([cy2 - cy1, cx2 - cx1])
     norm = np.sqrt((cy2 - cy1) ** 2 + (cx2 - cx1) ** 2) + 1e-6
+    return speed / norm
+
+
+# NOTE: Replace every call to speed_direction() method
+# with speed_direction_with_depth() method.
+def speed_direction_with_depth(bbox1, bbox2):
+    # Coordinates for bbox1 centre
+    cx1 = (bbox1[0] + bbox1[2]) / 2.0
+    cy1 = (bbox1[1] + bbox1[3]) / 2.0
+    cz1 = bbox1[4]
+
+    # Coordinates for bbox2 centre
+    cx2 = (bbox2[0] + bbox2[2]) / 2.0
+    cy2 = (bbox2[1] + bbox2[3]) / 2.0
+    cz2 = bbox2[4]
+
+    speed = np.array([cx2 - cx1, cy2 - cy1, cz2 - cz1])
+    norm = np.sqrt(
+        ((cx2 - cx1) ** 2) + ((cy2 - cy1) ** 2) + ((cz2 - cz1) ** 2)
+    ) + 1e-6
     return speed / norm
 
 
@@ -177,7 +203,7 @@ class KalmanBoxTracker(object):
         self.kf.Q[5:, 5:] *= 0.01  # Lower the uncertainty all velocities of the process function.
 
         # Initial state [u, v, w, s, r, du, dv, dw, ds]
-        self.kf.x[:5] = convert_bbox_to_z(bbox)  # Convert bounding box to state variables.
+        self.kf.x[:5] = convert_bbox_to_z_with_depth(bbox)  # Convert bounding box to state variables.
         
         self.time_since_update = 0
         self.id = KalmanBoxTracker.count
@@ -219,8 +245,9 @@ class KalmanBoxTracker(object):
                 if previous_box is None:
                     previous_box = self.last_observation
                 # Estimate the track speed direction with 
-                # observations \Delta t steps away
-                self.velocity = speed_direction(previous_box, bbox)
+                # observations \Delta t steps away.
+                # self.velocity = speed_direction(previous_box, bbox)  # ORIGINAL
+                self.velocity = speed_direction_with_depth(previous_box, bbox)  # DEB
 
             # Insert new observations. This is a ugly way 
             # to maintain both self.observations and 
@@ -234,7 +261,8 @@ class KalmanBoxTracker(object):
             self.history = []
             self.hits += 1
             self.hit_streak += 1
-            self.kf.update(convert_bbox_to_z(bbox))
+            # self.kf.update(convert_bbox_to_z(bbox))  # ORIGINAL
+            self.kf.update(convert_bbox_z_with_depth(bbox))  # DEB
         else:
             self.kf.update(bbox)
 
@@ -243,25 +271,29 @@ class KalmanBoxTracker(object):
         Advances the state vector and returns the predicted 
         bounding box estimate.
         """
-        if (self.kf.x[6] + self.kf.x[2]) <= 0:
-            self.kf.x[6] *= 0.0
+        # Scale and scale velocity is represented by the 
+        # state variables at index 3 and 8 respectively.
+        if (self.kf.x[8] + self.kf.x[3]) <= 0:
+            self.kf.x[8] *= 0.0
 
         self.kf.predict()
         self.age += 1
         if self.time_since_update > 0:
             self.hit_streak = 0
         self.time_since_update += 1
-        self.history.append(convert_x_to_bbox(self.kf.x))
+        # self.history.append(convert_x_to_bbox(self.kf.x))  # ORIGINAL
+        self.history.append(convert_x_to_bbox_with_depth(self.kf.x))  # DEB
         return self.history[-1]
 
     def get_state(self):
         """
         Returns the current bounding box estimate.
         """
-        return convert_x_to_bbox(self.kf.x)
+        # return convert_x_to_bbox(self.kf.x)  # ORIGINAL
+        return convert_x_to_bbox_with_depth(self.kf.x)  # DEB
 
 
-class OCSort(object):
+class OCSortRGBD(object):
     def __init__(
         self,
         per_class=True,
@@ -320,7 +352,13 @@ class OCSort(object):
         self.frame_count += 1
         h, w = img.shape[0:2]
 
-        dets = np.hstack([dets, np.arange(len(dets)).reshape(-1, 1)])
+        # Appends a new column to the dets array, where the new 
+        # column contains integers representing the indices of 
+        # the rows in the original dets array.
+        dets = np.hstack([
+            dets, 
+            np.arange(len(dets)).reshape(-1, 1)
+        ])
         # Depth of bbox centre inserted in index 4.
         # Confidence values are now available at index 5.
         confs = dets[:, 5]
@@ -342,16 +380,18 @@ class OCSort(object):
         ret = []
         for t, trk in enumerate(trks):
             pos = self.trackers[t].predict()[0]
-            trk[:] = [pos[0], pos[1], pos[2], pos[3], 0]
+            trk[:] = [pos[0], pos[1], pos[2], pos[3], pos[4], 0]
             if np.any(np.isnan(pos)):
                 to_del.append(t)
         trks = np.ma.compress_rows(np.ma.masked_invalid(trks))
         for t in reversed(to_del):
             self.trackers.pop(t)
 
+        # NOTE: In the else condition, np.array((0, 0)) changed 
+        # to np.array((0, 0, 0)) to account for depth.
         velocities = np.array(
             [
-                trk.velocity if trk.velocity is not None else np.array((0, 0))
+                trk.velocity if trk.velocity is not None else np.array((0, 0, 0))
                 for trk in self.trackers
             ]
         )
@@ -366,11 +406,25 @@ class OCSort(object):
         """
             First round of association
         """
-        matched, unmatched_dets, unmatched_trks = associate(
-            dets[:, 0:5], trks, self.asso_func, self.asso_threshold, velocities, k_observations, self.inertia, w, h
+        # NOTE: Original code called associate() method instead of
+        # associate_with_depth() method.
+        matched, unmatched_dets, unmatched_trks = associate_with_depth(
+            detections=dets[:, 0:6], 
+            trackers=trks, 
+            assoc_func=self.asso_func, 
+            iou_threshold=self.asso_threshold, 
+            velocities=velocities, 
+            previous_obs=k_observations, 
+            vdc_weights=self.inertia, 
+            w=w, 
+            h=h
         )
         for m in matched:
-            self.trackers[m[1]].update(dets[m[0], :5], dets[m[0], 5], dets[m[0], 6])
+            self.trackers[m[1]].update(
+                bbox=dets[m[0], :6], 
+                cls=dets[m[0], 6], 
+                det_ind=dets[m[0], 7]
+            )
 
         """
             Second round of associaton by OCR
@@ -395,7 +449,9 @@ class OCSort(object):
                     if iou_left[m[0], m[1]] < self.asso_threshold:
                         continue
                     self.trackers[trk_ind].update(
-                        dets_second[det_ind, :5], dets_second[det_ind, 5], dets_second[det_ind, 6]
+                        bbox=dets_second[det_ind, :6], 
+                        cls=dets_second[det_ind, 6], 
+                        det_ind=dets_second[det_ind, 7]
                     )
                     to_remove_trk_indices.append(trk_ind)
                 unmatched_trks = np.setdiff1d(
@@ -420,7 +476,11 @@ class OCSort(object):
                     det_ind, trk_ind = unmatched_dets[m[0]], unmatched_trks[m[1]]
                     if iou_left[m[0], m[1]] < self.asso_threshold:
                         continue
-                    self.trackers[trk_ind].update(dets[det_ind, :5], dets[det_ind, 5], dets[det_ind, 6])
+                    self.trackers[trk_ind].update(
+                        bbox=dets[det_ind, :6], 
+                        cls=ets[det_ind, 6], 
+                        det_ind=dets[det_ind, 7]
+                    )
                     to_remove_det_indices.append(det_ind)
                     to_remove_trk_indices.append(trk_ind)
                 unmatched_dets = np.setdiff1d(
@@ -431,11 +491,21 @@ class OCSort(object):
                 )
 
         for m in unmatched_trks:
-            self.trackers[m].update(None, None, None)
+            self.trackers[m].update(
+                bbox=None, 
+                cls=None, 
+                det_ind=None
+            )
 
-        # create and initialise new trackers for unmatched detections
+        # Create and initialise new trackers for unmatched 
+        # detections.
         for i in unmatched_dets:
-            trk = KalmanBoxTracker(dets[i, :5], dets[i, 5], dets[i, 6], delta_t=self.delta_t)
+            trk = KalmanBoxTracker(
+                bbox=dets[i, :6], 
+                cls=dets[i, 6], 
+                det_ind=dets[i, 7], 
+                delta_t=self.delta_t
+            )
             self.trackers.append(trk)
         i = len(self.trackers)
         for trk in reversed(self.trackers):
@@ -443,18 +513,23 @@ class OCSort(object):
                 d = trk.get_state()[0]
             else:
                 """
-                this is optional to use the recent observation or the kalman filter prediction,
-                we didn't notice significant difference here
+                This is optional to use the recent observation 
+                or the kalman filter prediction. 
+                We didn't notice significant difference here.
                 """
-                d = trk.last_observation[:4]
+                d = trk.last_observation[:5]
             if (trk.time_since_update < 1) and (
-                trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits
+                (trk.hit_streak >= self.min_hits) or (self.frame_count <= self.min_hits)
             ):
                 # +1 as MOT benchmark requires positive
                 ret.append(
-                    np.concatenate((d, [trk.id + 1], [trk.conf], [trk.cls], [trk.det_ind])).reshape(
-                        1, -1
-                    )
+                    np.concatenate((
+                        d, 
+                        [trk.id + 1], 
+                        [trk.conf], 
+                        [trk.cls], 
+                        [trk.det_ind]
+                    )).reshape(1, -1)
                 )
             i -= 1
             # remove dead tracklet
