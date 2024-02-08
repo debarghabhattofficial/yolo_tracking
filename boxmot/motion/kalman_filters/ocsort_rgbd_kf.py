@@ -400,16 +400,17 @@ class KalmanFilter(object):
             box1 = new_history[index1]
             print(f"box1 shape: {box1.shape}")  # DEB
             print(f"box1: \n{box1}")  # DEB
-            x1, y1, s1, r1 = box1 
+            x1, y1, depth1, s1, r1 = box1 
             w1 = np.sqrt(s1 * r1)
             h1 = np.sqrt(s1 / r1)
             box2 = new_history[index2]
-            x2, y2, s2, r2 = box2 
+            x2, y2, depth2, s2, r2 = box2 
             w2 = np.sqrt(s2 * r2)
             h2 = np.sqrt(s2 / r2)
             time_gap = index2 - index1
             dx = (x2-x1)/time_gap
             dy = (y2-y1)/time_gap 
+            ddepth = (depth2-depth1)/time_gap
             dw = (w2-w1)/time_gap 
             dh = (h2-h1)/time_gap
             for i in range(index2 - index1):
@@ -419,12 +420,13 @@ class KalmanFilter(object):
                     part to implement your own. 
                 """
                 x = x1 + (i+1) * dx 
-                y = y1 + (i+1) * dy 
+                y = y1 + (i+1) * dy
+                depth = depth1 + (i+1) * ddepth 
                 w = w1 + (i+1) * dw 
                 h = h1 + (i+1) * dh
                 s = w * h 
                 r = w / float(h)
-                new_box = np.array([x, y, s, r]).reshape((4, 1))
+                new_box = np.array([x, y, depth, s, r]).reshape((5, 1))
                 """
                     I still use predict-update loop here to refresh the parameters,
                     but this can be faster by directly modifying the internal parameters

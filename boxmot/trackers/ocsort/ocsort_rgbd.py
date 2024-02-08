@@ -12,9 +12,13 @@
 """
     This script is adopted from the SORT script by Alex Bewley alex@bewley.ai
 """
+import logging
+logging.basicConfig(level=logging.INFO)
+LOGGER = logging.getLogger(__name__)
+
 import numpy as np
 
-from boxmot.motion.kalman_filters.ocsort_kf import KalmanFilter
+from boxmot.motion.kalman_filters.ocsort_rgbd_kf import KalmanFilter
 from boxmot.utils.association import associate_with_depth, linear_assignment
 from boxmot.utils.iou import get_asso_func
 from boxmot.utils.iou import run_asso_func
@@ -22,7 +26,7 @@ from boxmot.utils.iou import run_asso_func
 
 def k_previous_obs(observations, cur_age, k):
     if len(observations) == 0:
-        return [-1, -1, -1, -1, -1]
+        return [-1, -1, -1, -1, -1, -1]
     for i in range(k):
         dt = k - i
         if cur_age - dt in observations:
@@ -58,12 +62,18 @@ def convert_bbox_to_z_with_depth(bbox, depth_mat=None):
     is the centre of the box, w is the depth of the center, 
     and s is the scale/area and r is the aspect ratio.
     """ 
-    # z will be of the form [u, v, s, r]
-    # where (u, v) is the center of the box.
     centre_depth = bbox[4]
     bbox = np.delete(bbox, 4)
+    # z will be of the form [u, v, s, r]
+    # where (u, v) is the center of the box.
     z = convert_bbox_to_z(bbox)
-    z = np.insert(z, 2, centre_depth)
+    # Insert the depth of the centre of the bounding box
+    # at index 2 of the z array.
+    z = np.insert(
+        arr=z, 
+        obj=2, 
+        values=centre_depth
+    ).reshape((5, 1))
     return z
 
 
@@ -100,12 +110,16 @@ def convert_x_to_bbox_with_depth(x, score=None):
     This method takes a bounding box in the centre form
     [u, v, w, s, r] and returns it in the form 
     [u1, v1, u2, v2, w] where (u1, v1) is the top left,  
-    (u2, v2) is the bottom right, and w is the centre.
+    (u2, v2) is the bottom right, and w is the centre depth.
     """
     centre_depth = x[2]
     x = np.delete(x, 2)
     bbox = convert_x_to_bbox(x, score=None)
-    bbox = np.insert(bbox, 2, centre_depth)
+    bbox = np.insert(
+        arr=bbox, 
+        obj=4, 
+        values=centre_depth
+    ).reshape(1, 5)
     return bbox
 
 
@@ -203,6 +217,7 @@ class KalmanBoxTracker(object):
         self.kf.Q[5:, 5:] *= 0.01  # Lower the uncertainty all velocities of the process function.
 
         # Initial state [u, v, w, s, r, du, dv, dw, ds]
+        print(f"self.kf.x: {self.kf.x.shape}")  # DEB
         self.kf.x[:5] = convert_bbox_to_z_with_depth(bbox)  # Convert bounding box to state variables.
         
         self.time_since_update = 0
@@ -216,12 +231,20 @@ class KalmanBoxTracker(object):
         self.conf = bbox[-1]
         self.cls = cls
         """
-        NOTE: [-1,-1,-1,-1,-1] is a compromising placeholder for non-observation status, the same for the return of
+        NOTE: [-1, -1, -1, -1, -1, -1] is a compromising placeholder for non-observation status, the same for the return of
         function k_previous_obs. It is ugly and I do not like it. But to support generate observation array in a
         fast and unified way, which you would see below k_observations = np.array([k_previous_obs(...]]),
         let's bear it for now.
+
+        Also, please keep in the mind that the original algorithm 
+        had a 5 element array for the last observation (since the bbox
+        for the trackers were represented by [u1, v1, u2, v2, score]).
+        In our modified algorithm, where we make use of the bbox 
+        centre depth, we added another element to the placeholder. In
+        other words, we have a placholder of size 6 as follows:
+        [-1, -1, -1, -1, -1, -1]
         """
-        self.last_observation = np.array([-1, -1, -1, -1, -1])  # placeholder
+        self.last_observation = np.array([-1, -1, -1, -1, -1, -1])  # placeholder
         self.observations = dict()
         self.history_observations = []
         self.velocity = None
@@ -231,6 +254,10 @@ class KalmanBoxTracker(object):
         """
         Updates the state vector with observed bbox.
         """
+        if bbox is not None:
+            print(f"bbox shape: {bbox.shape}")  # DEB
+            print(f"bbox: \n{bbox}")  # DEB
+            print("-" * 75)  # DEB
         self.det_ind = det_ind
         if bbox is not None:
             self.conf = bbox[-1]
@@ -262,8 +289,16 @@ class KalmanBoxTracker(object):
             self.hits += 1
             self.hit_streak += 1
             # self.kf.update(convert_bbox_to_z(bbox))  # ORIGINAL
+            joy_bbox = convert_bbox_to_z_with_depth(bbox)  # DEB
+            print(f"joy_bbox shape: {joy_bbox.shape}")  # DEB
+            print(f"joy_bbox: \n{joy_bbox}")  # DEB
+            print("-" * 75)  # DEB
             self.kf.update(convert_bbox_to_z_with_depth(bbox))  # DEB
         else:
+            if bbox is not None:  # DEB
+                print(f"bbox2 shape: {bbox.shape}")  # DEB
+                print(f"bbox2: \n{bbox}")  # DEB
+                print("-" * 75)  # DEB
             self.kf.update(bbox)
 
     def predict(self):
@@ -339,15 +374,20 @@ class OCSortRGBD(object):
         from the number of detections provided.
         """
 
+        err_msg = f"Unsupported 'dets' input format '{type(dets)}', valid format is np.ndarray."
         assert isinstance(
             dets, np.ndarray
-        ), f"Unsupported 'dets' input format '{type(dets)}', valid format is np.ndarray."
+        ), err_msg
+
+        err_msg = f"Unsupported 'dets' dimensions '{len(dets.shape)}', valid number of dimensions is two."
         assert (
             len(dets.shape) == 2
-        ), "Unsupported 'dets' dimensions, valid number of dimensions is two."
+        ), err_msg
+        
+        err_msg = f"Unsupported 'dets' 2nd dimension length '{dets.shape[1]}', valid lenghts is 7."
         assert (
             dets.shape[1] == 7
-        ), "Unsupported 'dets' 2nd dimension lenght, valid lenghts is 7."
+        ), err_msg
 
         self.frame_count += 1
         h, w = img.shape[0:2]
@@ -359,9 +399,15 @@ class OCSortRGBD(object):
             dets, 
             np.arange(len(dets)).reshape(-1, 1)
         ])
+        print(f"dets: {dets.shape}")  # DEB
+        print(f"dets: \n{dets}")  # DEB
+        print("-" * 75)  # DEB
         # Depth of bbox centre inserted in index 4.
         # Confidence values are now available at index 5.
         confs = dets[:, 5]
+        print(f"confs shape: {confs.shape}")  # DEB
+        print(f"confs: \n{confs}")  # DEB
+        print("-" * 75)  # DEB
 
         inds_low = confs > 0.1
         inds_high = confs < self.det_thresh
@@ -375,11 +421,15 @@ class OCSortRGBD(object):
         # get predicted locations from existing trackers.
         # Depth of bbox centre inserted in index 4.
         # Therefore, size along axis=1 increases by 1 to 6.
+        print(f"self.trackers: \n{self.trackers}")  # DEB
+        print("-" * 75)  # DEB 
         trks = np.zeros((len(self.trackers), 6))  
         to_del = []
         ret = []
         for t, trk in enumerate(trks):
             pos = self.trackers[t].predict()[0]
+            print(f"pos: \n{pos}")  # DEB
+            print("-" * 75)  # DEB
             trk[:] = [pos[0], pos[1], pos[2], pos[3], pos[4], 0]
             if np.any(np.isnan(pos)):
                 to_del.append(t)
@@ -411,11 +461,11 @@ class OCSortRGBD(object):
         matched, unmatched_dets, unmatched_trks = associate_with_depth(
             detections=dets[:, 0:6], 
             trackers=trks, 
-            assoc_func=self.asso_func, 
+            asso_func=self.asso_func, 
             iou_threshold=self.asso_threshold, 
             velocities=velocities, 
             previous_obs=k_observations, 
-            vdc_weights=self.inertia, 
+            vdc_weight=self.inertia, 
             w=w, 
             h=h
         )

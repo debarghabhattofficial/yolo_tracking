@@ -20,7 +20,7 @@ def speed_direction_batch(dets, tracks):
 # NOTE: Replace every call to speed_direction_batch() by
 # speed_direction_batch_with_depth() in the 
 # associate_with_depth() method definition.
-def speed_direction_batch(dets, tracks):
+def speed_direction_batch_with_depth(dets, tracks):
     tracks = tracks[..., np.newaxis]
     # Center coordinates of bbox1
     CX1 = (dets[:, 0] + dets[:, 2]) / 2.0
@@ -258,7 +258,7 @@ def associate_with_depth(detections,
 
     # compute the speed and direction of the detections 
     # based on their previous observations.
-    X, Y, Z = speed_direction_batch(detections, previous_obs)
+    X, Y, Z = speed_direction_batch_with_depth(detections, previous_obs)
     
     # Extract the X, Y and Z components of velocities and 
     # repeat them to match the shape of the computed 
