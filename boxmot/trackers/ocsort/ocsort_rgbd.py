@@ -15,7 +15,7 @@
 import numpy as np
 
 from boxmot.motion.kalman_filters.ocsort_kf import KalmanFilter
-from boxmot.utils.association import associate, linear_assignment
+from boxmot.utils.association import associate_with_depth, linear_assignment
 from boxmot.utils.iou import get_asso_func
 from boxmot.utils.iou import run_asso_func
 
@@ -262,7 +262,7 @@ class KalmanBoxTracker(object):
             self.hits += 1
             self.hit_streak += 1
             # self.kf.update(convert_bbox_to_z(bbox))  # ORIGINAL
-            self.kf.update(convert_bbox_z_with_depth(bbox))  # DEB
+            self.kf.update(convert_bbox_to_z_with_depth(bbox))  # DEB
         else:
             self.kf.update(bbox)
 
