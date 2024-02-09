@@ -384,7 +384,7 @@ class OCSortRGBD(object):
             len(dets.shape) == 2
         ), err_msg
         
-        err_msg = f"Unsupported 'dets' 2nd dimension length '{dets.shape[1]}', valid lenghts is 7."
+        err_msg = f"Unsupported 'dets' 2nd dimension length '{dets.shape[1]}', valid lenghts is 7. It is '{dets}'"
         assert (
             dets.shape[1] == 7
         ), err_msg
@@ -528,7 +528,7 @@ class OCSortRGBD(object):
                         continue
                     self.trackers[trk_ind].update(
                         bbox=dets[det_ind, :6], 
-                        cls=ets[det_ind, 6], 
+                        cls=dets[det_ind, 6], 
                         det_ind=dets[det_ind, 7]
                     )
                     to_remove_det_indices.append(det_ind)
