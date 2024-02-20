@@ -395,16 +395,16 @@ class BoTSORTRGBD(object):
         dets_second = dets[second_mask]
         print(f"second_mask: \n{second_mask}")  # DEB
         print("-" * 75)  # DEB
-        print(f"dets_second: \n{dets_second}")
-        print("-" * 75)
+        print(f"dets_second: \n{dets_second}")  # DEB
+        print("-" * 75)  # DEB
 
         # find first round association detections
         first_mask = confs > self.track_high_thresh
         dets_first = dets[first_mask]
-        print(f"first_mask: \n{first_mask}")
-        print("-" * 75)
-        print(f"dets_first: \n{dets_first}")
-        print("-" * 75)
+        print(f"first_mask: \n{first_mask}")  # DEB
+        print("-" * 75)  # DEB
+        print(f"dets_first: \n{dets_first}") # DEB
+        print("-" * 75)  # DEB
 
         """Extract embeddings """
         if self.with_reid:
