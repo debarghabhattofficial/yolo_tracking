@@ -21,6 +21,53 @@ def xyxy2xywh(x):
     return y
 
 
+# NOTE: Replace every call to xyxy2xywh() method in 
+# BoT-SORT + RGBD code with xyxy2xywh_with_depth() 
+# method.
+def xyxy2xywh_with_depth(x):
+    """
+    Convert bounding box coordinates from 
+    (x1, y1, x2, y2, depth) format to 
+    (x, y, depth, width, height) format.
+
+    Args:
+        x (np.ndarray) or (torch.Tensor): 
+        The input bounding box coordinates in 
+        (x1, y1, x2, y2, depth) format.
+    Returns:
+       y (np.ndarray) or (torch.Tensor): 
+       The bounding box coordinates in 
+       (x, y, depth, width, height) format.
+    """
+    if isinstance(x, torch.Tensor):
+        y = x.clone()
+        # Remove the depth tensor from the input tensor.
+        y = torch.cat((
+            y[..., :4], 
+            y[..., 4+1:]
+        ), dim=-1)
+        # Convert the bounding box coordinates from
+        # (x1, y1, x2, y2) format to (x, y, width, height) format.
+        y = xyxy2xywh(x=y)
+        # Insert the depth tensor back to the tensor.
+        y = torch.cat((
+            y[..., :2], 
+            x[..., 4].unsqueeze(dim=-1), 
+            y[..., 2:]
+        ), dim=-1)
+    else:
+        y = np.copy(x)
+        # Remove the depth array from the input array.
+        y = np.delete(arr=y, obj=4, axis=-1)
+        # Convert the bounding box coordinates from
+        # (x1, y1, x2, y2) format to (x, y, width, height) format.
+        y = xyxy2xywh(x=y)
+        # Insert the depth array back to the array.
+        y = np.insert(arr=y, obj=2, values=x[..., 4], axis=-1)
+
+    return y
+
+
 def xywh2xyxy(x):
     """
     Convert bounding box coordinates from (x_c, y_c, width, height) format to
@@ -33,10 +80,77 @@ def xywh2xyxy(x):
         y (np.ndarray) or (torch.Tensor): The bounding box coordinates in (x1, y1, x2, y2) format.
     """
     y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
+    y[..., ]
     y[..., 0] = x[..., 0] - x[..., 2] / 2  # top left x
     y[..., 1] = x[..., 1] - x[..., 3] / 2  # top left y
     y[..., 2] = x[..., 0] + x[..., 2] / 2  # bottom right x
     y[..., 3] = x[..., 1] + x[..., 3] / 2  # bottom right y
+    return y
+
+
+# NOTE: Replace every call to xywh2xyxy() method in 
+# BoT-SORT + RGBD code with xywh2xyxy_with_depth() 
+# method.
+def xywh2xyxy_with_depth(x):
+    """
+    Convert bounding box coordinates from 
+    (x_c, y_c, depth, width, height) format to
+    (x1, y1, x2, y2, depth) format where 
+        (x1, y1) is the top-left corner,
+        (x2, y2) is the bottom-right corner, and
+        depth is the bounding box centre depth.
+
+    Args:
+        x (np.ndarray) or (torch.Tensor): The input bounding 
+        box coordinates in (x, y, depth, width, height) format.
+    Returns:
+        y (np.ndarray) or (torch.Tensor): The bounding box 
+        coordinates in (x1, y1, x2, y2, depth) format.
+    """
+    if isinstance(x, torch.Tensor):
+        print(f"INSIDE xywh2xyxy_with_depth()")  # DEB
+        print("-" * 75)  # DEB
+        y = x.clone()
+        print(f"y: \n{y}")  # DEB
+        print("-" * 75)  # DEB
+        # Remove the depth tensor from the input tensor.
+        y = torch.cat((
+            y[..., :2], 
+            y[..., 2+1:]
+        ), dim=-1)
+        print(f"y: \n{y}")  # DEB
+        print("-" * 75)  # DEB
+        # Convert the bounding box coordinates from
+        # (x, y, w, h) format to (x1, y1, x2, y2) format.
+        y = xywh2xyxy(x=y)
+        print(f"y: \n{y}")  # DEB
+        print("-" * 75)  # DEB
+        # Insert the depth tensor back to the tensor.
+        y = torch.cat((
+            y[..., :4], 
+            x[..., 2].unsqueeze(dim=-1), 
+            y[..., 4:]
+        ), dim=-1)
+        print(f"y: \n{y}")  # DEB
+        print("-" * 75)  # DEB
+    else:
+        y = np.copy(x)
+        print(f"y: \n{y}")  # DEB
+        print("-" * 75)  # DEB
+        # Remove the depth array from the input array.
+        y = np.delete(arr=y, obj=2, axis=-1)
+        print(f"y: \n{y}")  # DEB
+        print("-" * 75)  # DEB
+        # Convert the bounding box coordinates from
+        # (x1, y1, x2, y2) format to (x, y, width, height) format.
+        y = xywh2xyxy(x=y)
+        print(f"y: \n{y}")  # DEB
+        print("-" * 75)  # DEB
+        # Insert the depth array back to the array.
+        y = np.insert(arr=y, obj=4, values=x[..., 2], axis=-1)
+        print(f"y: \n{y}")  # DEB
+        print("-" * 75)  # DEB
+        
     return y
 
 
@@ -50,7 +164,7 @@ def xywh2tlwh(x):
     Returns:
         y (np.ndarray) or (torch.Tensor): The bounding box coordinates in (x1, y1, x2, y2) format.
     """
-    y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
+    y = x.cl1one() if isinstance(x, torch.Tensor) else np.copy(x)
     y[..., 0] = x[..., 0] - x[..., 2] / 2.0  # xc --> t
     y[..., 1] = x[..., 1] - x[..., 3] / 2.0  # yc --> l
     y[..., 2] = x[..., 2]                    # width

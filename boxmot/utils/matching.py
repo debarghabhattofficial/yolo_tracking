@@ -61,7 +61,38 @@ def linear_assignment(cost_matrix, thresh):
             tuple(range(cost_matrix.shape[1])),
         )
     matches, unmatched_a, unmatched_b = [], [], []
-    cost, x, y = lap.lapjv(cost_matrix, extend_cost=True, cost_limit=thresh)
+    cost, x, y = lap.lapjv(
+        cost_matrix, 
+        extend_cost=True, 
+        cost_limit=thresh
+    )
+    for ix, mx in enumerate(x):
+        if mx >= 0:
+            matches.append([ix, mx])
+    unmatched_a = np.where(x < 0)[0]
+    unmatched_b = np.where(y < 0)[0]
+    matches = np.asarray(matches)
+    return matches, unmatched_a, unmatched_b
+
+
+# NOTE: Replace every call to linear_assignment() method with
+# linear_assignment_with_depth() method in BoT-SORT + RGBD code.
+# No difference between the two methods, only used for debugging
+# purpose while developing the BoT-SORT + RGBD algorithm. Remove if
+# not required.
+def linear_assignment_with_depth(cost_matrix, thresh):
+    if cost_matrix.size == 0:
+        return (
+            np.empty((0, 2), dtype=int),
+            tuple(range(cost_matrix.shape[0])),
+            tuple(range(cost_matrix.shape[1])),
+        )
+    matches, unmatched_a, unmatched_b = [], [], []
+    cost, x, y = lap.lapjv(
+        cost_matrix, 
+        extend_cost=True, 
+        cost_limit=thresh
+    )
     for ix, mx in enumerate(x):
         if mx >= 0:
             matches.append([ix, mx])
@@ -119,6 +150,55 @@ def iou_distance(atracks, btracks):
     return cost_matrix
 
 
+# NOTE: Replace every call to iou_distance() method in
+# BoT-SORT + RGBD code with iou_distance_with_depth().
+def iou_distance_with_depth(atracks, btracks):
+    """
+    Compute cost based on IoU
+    :type atracks: list[STrack]
+    :type btracks: list[STrack]
+
+    :rtype cost_matrix np.ndarray
+    """
+
+    if (len(atracks) > 0 and isinstance(atracks[0], np.ndarray)) or (
+        len(btracks) > 0 and isinstance(btracks[0], np.ndarray)
+    ):
+        # Get bbox top left and bottom right coordinates
+        # for atracks.
+        # atlbrs = atracks  # ORIGINAL
+        atlbrs = atracks[:, :4]  # DEB
+        err_msg = f"Unsupported 'atlbrs' 2nd dimension length '{atlbrs.shape[1]}', valid lenghts is 4."
+        assert(atlbrs.shape[1] == 4), err_msg
+        # Get bbox top left and bottom right coordinates
+        # for btracks.
+        # btlbrs = btracks  # ORIGINAL
+        btlbrs = btracks[:, :4]  # DEB
+        err_msg = f"Unsupported 'btlbrs' 2nd dimension length '{btlbrs.shape[1]}', valid lenghts is 4."
+        assert(btlbrs.shape[1] == 4), err_msg
+    else:
+        atlbrs = [
+            track.xyxy_with_depth[:4] 
+            for track in atracks
+        ]
+        btlbrs = [
+            track.xyxy_with_depth[:4] 
+            for track in btracks
+        ]
+
+    ious = np.zeros(
+        shape=(len(atlbrs), len(btlbrs)), 
+        dtype=np.float32
+    )
+    if ious.size == 0:
+        return ious
+    _ious = iou_batch(atlbrs, btlbrs)
+
+    cost_matrix = 1 - _ious
+
+    return cost_matrix
+
+
 def v_iou_distance(atracks, btracks):
     """
     Compute cost based on IoU
@@ -150,19 +230,25 @@ def embedding_distance(tracks, detections, metric="cosine"):
     :return: cost_matrix np.ndarray
     """
 
-    cost_matrix = np.zeros((len(tracks), len(detections)), dtype=np.float32)
+    cost_matrix = np.zeros(
+        shape=(len(tracks), len(detections)), 
+        dtype=np.float32
+    )
     if cost_matrix.size == 0:
         return cost_matrix
-    det_features = np.asarray(
-        [track.curr_feat for track in detections], dtype=np.float32
-    )
+    det_features = np.asarray([
+        track.curr_feat 
+        for track in detections
+    ], dtype=np.float32)
     # for i, track in enumerate(tracks):
     # cost_matrix[i, :] = np.maximum(0.0, cdist(track.smooth_feat.reshape(1,-1), det_features, metric))
-    track_features = np.asarray(
-        [track.smooth_feat for track in tracks], dtype=np.float32
-    )
+    track_features = np.asarray([
+        track.smooth_feat 
+        for track in tracks
+    ], dtype=np.float32)
     cost_matrix = np.maximum(
-        0.0, cdist(track_features, det_features, metric)
+        0.0, 
+        cdist(track_features, det_features, metric)
     )  # Nomalized features
     return cost_matrix
 
@@ -178,6 +264,45 @@ def gate_cost_matrix(kf, cost_matrix, tracks, detections, only_position=False):
             track.mean, track.covariance, measurements, only_position
         )
         cost_matrix[row, gating_distance > gating_threshold] = np.inf
+    return cost_matrix
+
+
+# NOTE: Replace every call to embedding_distance() method in
+# BoT-SORT + RGBD code with embedding_distance_with_depth().
+# This method does not differ from the original embedding_distance()
+# method. It is used for debugging purpose while developing the
+# BoT-SORT + RGBD algorithm.
+def embedding_distance_with_depth(tracks, 
+                                  detections, 
+                                  metric="cosine"):
+    """
+    :param tracks: list[STrack]
+    :param detections: list[BaseTrack]
+    :param metric:
+    :return: cost_matrix np.ndarray
+    """
+
+    cost_matrix = np.zeros(
+        shape=(len(tracks), len(detections)), 
+        dtype=np.float32
+    )
+    if cost_matrix.size == 0:
+        return cost_matrix
+    det_features = np.asarray([
+        track.curr_feat 
+        for track in detections
+    ], dtype=np.float32)
+    # for i, track in enumerate(tracks):
+    # cost_matrix[i, :] = np.maximum(0.0, cdist(track.smooth_feat.reshape(1,-1), det_features, metric))
+    track_features = np.asarray([
+        track.smooth_feat 
+        for track in tracks
+    ], dtype=np.float32)
+    # Nomalized features
+    cost_matrix = np.maximum(
+        0.0, 
+        cdist(track_features, det_features, metric)
+    )
     return cost_matrix
 
 
@@ -211,6 +336,21 @@ def fuse_iou(cost_matrix, tracks, detections):
 
 
 def fuse_score(cost_matrix, detections):
+    if cost_matrix.size == 0:
+        return cost_matrix
+    iou_sim = 1 - cost_matrix
+    det_scores = np.array([det.score for det in detections])
+    det_scores = np.expand_dims(det_scores, axis=0).repeat(cost_matrix.shape[0], axis=0)
+    fuse_sim = iou_sim * det_scores
+    fuse_cost = 1 - fuse_sim
+    return fuse_cost
+
+
+# NOTE: Replace every call to fuse_score() method with fuse_score_with_depth()
+# in BoT-SORT + RGBD algorithm.
+# No difference between the two methods, only used for debugging purpose while
+# developing the BoT-SORT + RGBD algorithm. Remove later if not required.
+def fuse_score_with_depth(cost_matrix, detections):
     if cost_matrix.size == 0:
         return cost_matrix
     iou_sim = 1 - cost_matrix

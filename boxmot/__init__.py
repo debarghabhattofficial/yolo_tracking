@@ -16,7 +16,8 @@ from boxmot.trackers.strongsort.strong_sort import StrongSORT
 # depth information from the RGBD camera for tracking.
 # Added by Debargha Bhattacharjee for the Shadow Mode project.
 # =================================================================================
-from boxmot.trackers.ocsort.ocsort_rgbd import OCSortRGBD as OCSortRGBD
+from boxmot.trackers.ocsort.ocsort_rgbd import OCSORTRGBD as OCSORTRGBD
+from boxmot.trackers.botsort.bot_sort_rgbd import BoTSORTRGBD as BoTSORTRGBD
 # =================================================================================
 
 TRACKERS = [

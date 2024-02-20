@@ -70,8 +70,9 @@ class SparseOptFlow(CMCInterface):
         h, w = img.shape
 
         # Lucas-Kanade is based on a local motion constancy assumption,
-        # where nearby pixels have the same displacement direction. Hence, it is better to discard
-        # dynamic object for feature extraction from static objects
+        # where nearby pixels have the same displacement direction. Hence, 
+        # it is better to discard dynamic object for feature extraction from .
+        # static objects
         mask = self.generate_mask(img, dets, self.scale)
 
         # handle first frame

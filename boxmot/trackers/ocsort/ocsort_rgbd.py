@@ -328,7 +328,7 @@ class KalmanBoxTracker(object):
         return convert_x_to_bbox_with_depth(self.kf.x)  # DEB
 
 
-class OCSortRGBD(object):
+class OCSORTRGBD(object):
     def __init__(
         self,
         per_class=True,
@@ -418,7 +418,7 @@ class OCSortRGBD(object):
         remain_inds = confs > self.det_thresh
         dets = dets[remain_inds]
 
-        # get predicted locations from existing trackers.
+        # Get predicted locations from existing trackers.
         # Depth of bbox centre inserted in index 4.
         # Therefore, size along axis=1 increases by 1 to 6.
         print(f"self.trackers: \n{self.trackers}")  # DEB

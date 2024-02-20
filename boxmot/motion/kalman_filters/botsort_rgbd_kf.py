@@ -64,11 +64,11 @@ class KalmanFilter(object):
         # Measurement matrix H
         self._update_mat = np.array(
             [
-                [1, 0, 0, 0, 0, 0, 0, 0, 0],  # u
-                [0, 1, 0, 0, 0, 0, 0, 0, 0],  # v
-                [0, 0, 1, 0, 0, 0, 0, 0, 0],  # depth
-                [0, 0, 0, 1, 0, 0, 0, 0, 0],  # w
-                [0, 0, 0, 0, 1, 0, 0, 0, 0],  # h
+                [1, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # u
+                [0, 1, 0, 0, 0, 0, 0, 0, 0, 0],  # v
+                [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],  # depth
+                [0, 0, 0, 1, 0, 0, 0, 0, 0, 0],  # w
+                [0, 0, 0, 0, 1, 0, 0, 0, 0, 0],  # h
             ]
         )
 
@@ -81,7 +81,7 @@ class KalmanFilter(object):
         # Uncertainty in depth measurement. This is a hack which
         # makes the depth measurement uncertainty constant irrespective
         # of the current measurement.
-        self._std_centre_depth = 0.01 ** (1/2)  # Here, we assume variance is 1.0.
+        self._std_centre_depth = 0.01 ** (1/2)  # 0.01 ** (1/2)  # Here, we assume variance is 1.0.
 
     def initiate(self, measurement):
         """Create track from unassociated measurement.
@@ -190,16 +190,26 @@ class KalmanFilter(object):
             given state estimate.
 
         """
+        print("INSIDE KalmanFilter.project()")  # DEB
+        print("-" * 75)  # DEB
         std = [
             self._std_weight_position * mean[3],
             self._std_weight_position * mean[4],
             self._std_centre_depth,
             self._std_weight_position * mean[3],
-            self._std_weight_position * mean[4],
-            self._std_centre_depth
+            self._std_weight_position * mean[4]
         ]
         innovation_cov = np.diag(np.square(std))
 
+        print(f"mean shape: {mean.shape}")  # DEB
+        print(f"mean: \n{mean}")  # DEB
+        print("-" * 75)  # DEB
+        print(f"covariance shape: {covariance.shape}")  # DEB
+        print(f"covariance: \n{covariance}")  # DEB
+        print("-" * 75)  # DEB
+        print(f"self._update_mat shape: {self._update_mat.shape}")  # DEB
+        print(f"self._update_mat: \n{self._update_mat}")  # DEB
+        print("-" * 75)  # DEB
         mean = np.dot(self._update_mat, mean)
         covariance = np.linalg.multi_dot(
             (self._update_mat, covariance, self._update_mat.T)
