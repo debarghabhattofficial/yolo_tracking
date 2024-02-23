@@ -165,6 +165,65 @@ class STrack(BaseTrack):
             multi_covariance = np.asarray([st.covariance for st in stracks])
 
             R = H[:2, :2]
+            # Using the same identity matrix in Knornocker product
+            # of size 4x4 as in original BoTSORT since out 
+            # we exclude depth-related dimensions from the affine 
+            # transformations.
+            R8x8 = np.kron(np.eye(4, dtype=float), R)
+            t = H[:2, 2]
+
+            for i, (mean, cov) in enumerate(zip(multi_mean, multi_covariance)):
+                print(f"mean shape: {mean.shape}")  # DEB
+                print(f"mean: {mean}")  # DEB
+                print("-" * 75)  # DEB
+                sub_mean = np.concatenate([
+                    mean[:2], 
+                    mean[3:7], 
+                    mean[8:]
+                ])
+                sub_mean = R8x8.dot(sub_mean)
+                sub_mean[:2] += t
+                print(f"sub_mean shape: {sub_mean.shape}")  # DEB
+                print(f"sub_mean: {sub_mean}")  # DEB
+                print("-" * 75)  # DEB
+                mean[:2] = sub_mean[:2]
+                mean[3:7] = sub_mean[2:6]
+                mean[8:] = sub_mean[6:]
+                print(f"mean shape: {mean.shape}")  # DEB
+                print(f"mean: {mean}")  # DEB
+                print("-" * 75)  # DEB
+
+                sub_cov = np.block([
+                    [cov[:2, :2], cov[:2, 3:7], cov[:2, 8:]],
+                    [cov[3:7, :2], cov[3:7, 3:7], cov[3:7, 8:]],
+                    [cov[8:, :2], cov[8:, 3:7], cov[8:, 8:]]
+                ])
+                sub_cov = R8x8.dot(sub_cov).dot(R8x8.transpose())
+                cov[:2, :2] = sub_cov[:2, :2]
+                cov[:2, 3:7] = sub_cov[:2, 2:6]
+                cov[:2, 8:] = sub_cov[:2, 6:]
+                cov[3:7, :2] = sub_cov[2:6, :2]
+                cov[3:7, 3:7] = sub_cov[2:6, 2:6]
+                cov[3:7, 8:] = sub_cov[2:6, 6:]
+                cov[8:, :2] = sub_cov[6:, :2]
+                cov[8:, 3:7] = sub_cov[6:, 2:6]
+                cov[8:, 8:] = sub_cov[6:, 6:]
+
+                stracks[i].mean = mean
+                stracks[i].covariance = cov
+
+    # NOTE: Replace every call to self.multi_gmc() method with
+    # self.multi_gmc_with_depth() method.
+    @staticmethod
+    def multi_gmc_with_depth2(stracks, H=np.eye(2, 3)):
+        # NOTE: Make changes to this method to account for
+        # camera motion compensation while updating the
+        # state of the tracklets.
+        if len(stracks) > 0:
+            multi_mean = np.asarray([st.mean.copy() for st in stracks])
+            multi_covariance = np.asarray([st.covariance for st in stracks])
+
+            R = H[:2, :2]
             # Changed the identity matrix in Knornocker product
             # from 4x4 to 5x5 since out measurement vector has
             # 5 measurement varibles (x, y, depth, w, h).

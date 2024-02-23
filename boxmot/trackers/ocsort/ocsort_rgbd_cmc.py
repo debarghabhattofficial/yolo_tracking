@@ -23,6 +23,9 @@ from boxmot.utils.association import associate_with_depth, linear_assignment
 from boxmot.utils.iou import get_asso_func
 from boxmot.utils.iou import run_asso_func
 
+from pprint import pprint  # DEB
+from boxmot.motion.cmc.sof import SparseOptFlow
+
 
 def k_previous_obs(observations, cur_age, k):
     if len(observations) == 0:
@@ -329,7 +332,124 @@ class KalmanBoxTracker(object):
         """
         # return convert_x_to_bbox(self.kf.x)  # ORIGINAL
         return convert_x_to_bbox_with_depth(self.kf.x)  # DEB
+    
+    # # NOTE: Use self.multi_gmc() method with
+    # # self.multi_gmc_with_depth() method.
+    # # @staticmethod
+    # def multi_gmc_with_depth(stracks, H=np.eye(2, 3)):
+    #     # NOTE: Make changes to this method to account for
+    #     # camera motion compensation while updating the
+    #     # state of the tracklets.
+    #     if len(stracks) > 0:
+    #         multi_mean = np.asarray([st.mean.copy() for st in stracks])
+    #         multi_covariance = np.asarray([st.covariance for st in stracks])
 
+    #         R = H[:2, :2]
+    #         # Changed the identity matrix in Knornocker product
+    #         # from 4x4 to 5x5 since out measurement vector has
+    #         # 5 measurement varibles (x, y, depth, w, h).
+    #         R10x10 = np.kron(np.eye(5, dtype=float), R)
+    #         t = H[:2, 2]
+
+    #         for i, (mean, cov) in enumerate(zip(multi_mean, multi_covariance)):
+    #             mean = R10x10.dot(mean)
+    #             mean[:2] += t
+    #             cov = R10x10.dot(cov).dot(R10x10.transpose())
+
+    #             stracks[i].mean = mean
+    #             stracks[i].covariance = cov
+
+    # @staticmethod
+    def multi_gmc_with_depth(stracks, H=np.eye(2, 3)):
+        # NOTE: Make changes to this method to account for
+        # camera motion compensation while updating the
+        # state of the tracklets.
+        if len(stracks) > 0:
+            multi_mean = np.asarray([st.kf.x.copy() for st in stracks])
+            multi_covariance = np.asarray([st.kf.P for st in stracks])
+
+            R = H[:2, :2]
+            R4x4 = np.kron(np.eye(2, dtype=float), R)
+            print(f"R4x4 shape: {R4x4.shape}")  # DEB
+            print(f"R4x4: \n{R4x4}")  # DEB
+            print("-" * 75)  # DEB
+            t = H[:2, 2].reshape(-1, 1)
+            print(f"t shape: {t.shape}")  # DEB
+            print(f"t: \n{t}")  # DEB
+            print("-" * 75)  # DEB
+
+            for i, (mean, cov) in enumerate(zip(multi_mean, multi_covariance)):
+                # Get transformed state mean vector.
+                print(f"mean shape: {mean.shape}")  # DEB
+                print(f"mean: \n{mean}")  # DEB
+                print("-" * 75)  # DEB
+                sub_mean = np.concatenate([
+                    mean[:2],  # 2 x 1
+                    mean[5:7]  # 2 x 1
+                ])
+                print(f"sub_mean shape: {sub_mean.shape}")  # DEB
+                print(f"sub_mean: \n{sub_mean}")  # DEB
+                print("-" * 75)  # DEB
+                sub_mean = R4x4.dot(sub_mean)
+                sub_mean[:2] += t
+                print(f"sub_mean shape: {sub_mean.shape}")  # DEB
+                print(f"sub_mean: \n{sub_mean}")  # DEB
+                print("-" * 75)  # DEB
+                mean[:2] = sub_mean[:2]
+                mean[5:7] = sub_mean[2:]
+                print(f"mean shape: {mean.shape}")  # DEB
+                print(f"mean: \n{mean}")  # DEB
+                print("-" * 75)  # DEB
+
+                # Get transformed state covariance matrix.
+                sub_cov = np.block([
+                    [cov[:2, :2], cov[:2, 5:7]],
+                    [cov[5:7, :2], cov[5:7, 5:7]]
+                ])
+                sub_cov = R4x4.dot(sub_cov).dot(R4x4.transpose())
+                cov[:2, :2] = sub_cov[:2, :2]
+                cov[:2, 5:7] = sub_cov[:2, 2:]
+                cov[5:7, :2] = sub_cov[2:, :2]
+                cov[5:7, 5:7] = sub_cov[2:, 2:]
+
+                stracks[i].kf.x = mean
+                stracks[i].kf.P = cov
+
+    def apply_cmc(self, H=np.eye(2, 3)):
+        # NOTE: Make changes to this method to account for
+        # camera motion compensation while updating the
+        # state of the tracklets.
+        R = H[:2, :2]
+        R4x4 = np.kron(np.eye(2, dtype=float), R)
+        t = H[:2, 2]
+
+        mean_ = self.kf.x
+        cov_ = self.kf.P
+
+        # Get transformed state mean vector.
+        sub_mean_ = np.concatenate([
+            mean_[:2],  # 
+            mean_[5:7]
+        ])
+        sub_mean_ = R4x4.dot(sub_mean_)
+        sub_mean_[:2] += t
+        mean_[:2] = sub_mean_[:2]
+        mean_[5:7] = sub_mean_[2:]
+
+        # Get transformed state covariance matrix.
+        sub_cov_ = np.block([
+            [cov_[:2, :2], cov_[:2, 5:7]],
+            [cov_[5:7, :2], cov_[5:7, 5:7]]
+        ])
+        sub_cov_ = R4x4.dot(sub_cov_).dot(R4x4.transpose())
+        cov_[:2, :2] = sub_cov_[:2, :2]
+        cov_[:2, 5:7] = sub_cov_[:2, 2:]
+        cov_[5:7, :2] = sub_cov_[2:, :2]
+        cov_[5:7, 5:7] = sub_cov_[2:, 2:]
+
+        self.kf.x = mean_
+        self.kf.P = cov_
+        
 
 class OCSORTRGBDCMC(object):
     def __init__(
@@ -358,6 +478,8 @@ class OCSORTRGBDCMC(object):
         self.inertia = inertia
         self.use_byte = use_byte
         KalmanBoxTracker.count = 0
+
+        self.cmc = SparseOptFlow()
 
     def update(self, dets, img):
         """
@@ -459,13 +581,31 @@ class OCSORTRGBDCMC(object):
         for t in reversed(to_del):
             self.trackers.pop(t)
 
-        print(f"self.trackers (BEFORE 1st association): \n{self.trackers}")  # DEB
-        print("-" * 75)  # DEB
+        print(f"self.trackers (BEFORE 1st association): ")  # DEB
+        for j_i, j_trk in enumerate(self.trackers):
+            print(f"j_trk[{j_i}].kf.x shape: \n{j_trk.kf.x.shape}")  # DEB
+            print(f"j_trk[{j_i}].kf.x: \n{j_trk.kf.x}")  # DEB
+            print("-" * 75)  # DEB
+            print(f"j_trk[{j_i}].kf.P shape: \n{j_trk.kf.P.shape}")  # DEB
+            print(f"j_trk[{j_i}].kf.P: \n{j_trk.kf.P}")  # DEB
+            print("-" * 75)  # DEB
+            print(f"j_trk[{j_i}].last_observation shape: \n{j_trk.last_observation.shape}")  # DEB
+            print(f"j_trk[{j_i}].last_observation: \n{j_trk.last_observation}")  # DEB
+            print("-" * 75)  # DEB
+            print(f"j_trk[{j_i}].observations: ")  # DEB
+            pprint(j_trk.observations)  # DEB
+            print("-" * 75)  # DEB
+            print(f"j_trk[{j_i}].velocity: \n{j_trk.velocity}")  # DEB
+            print("=" * 75)  # DEB
+            print("\n")  # DEB
         
         # =======================================================
         # NOTE: We will probablu have to apply camera compensation
         # in the following step before we apply the first round of
         # association.
+        # Enter camera compensation code here.
+        warp = self.cmc.apply(img, dets[:, :4])  # DEB
+        KalmanBoxTracker.multi_gmc_with_depth(self.trackers, warp)  # DEB
         # =======================================================
 
         # NOTE: In the else condition, np.array((0, 0)) changed 
