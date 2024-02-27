@@ -17,6 +17,7 @@ from boxmot.trackers.strongsort.strong_sort import StrongSORT
 # Added by Debargha Bhattacharjee for the Shadow Mode project.
 # =================================================================================
 from boxmot.trackers.ocsort.ocsort_rgbd import OCSORTRGBD as OCSORTRGBD
+from boxmot.trackers.ocsort.ocsort_rgbd_tlbr import OCSORTRGBDTLBR as OCSORTRGBDTLBR
 from boxmot.trackers.ocsort.ocsort_rgbd_cmc import OCSORTRGBDCMC as OCSORTRGBDCMC
 from boxmot.trackers.botsort.bot_sort_rgbd import BoTSORTRGBD as BoTSORTRGBD
 # =================================================================================
@@ -28,6 +29,7 @@ TRACKERS = [
     "strongsort", 
     "ocsort", 
     "ocsort_rgbd",  # DEB
+    "ocsort_rgbd_tlbr",  # DEB
     "ocsort_rgbd_cmc",  # DEB
     "deepocsort", 
     "hybridsort"
@@ -38,6 +40,7 @@ __all__ = (
     "StrongSORT", 
     "OCSORT", 
     "OCSORTRGBD",  # DEB
+    "OCSORTRGBDTLBR",  # DEB
     "OCSORTRGBDCMC",  # DEB
     "BYTETracker", 
     "BoTSORT", 

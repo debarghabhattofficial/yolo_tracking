@@ -28,6 +28,8 @@ def convert_bbox_to_z(bbox):
       [x,y,s,r] where x,y is the centre of the box and s is the scale/area and r is
       the aspect ratio
     """
+    print(f"bbox (not None): \n{bbox}")  # DEB
+    print("-" * 75)  # DEB
     w = bbox[2] - bbox[0]
     h = bbox[3] - bbox[1]
     x = bbox[0] + w / 2.0
@@ -163,6 +165,8 @@ class KalmanBoxTracker(object):
             self.hit_streak += 1
             self.kf.update(convert_bbox_to_z(bbox))
         else:
+            print(f"bbox (None): {bbox}")  # DEB
+            print("-" * 75)  # DEB
             self.kf.update(bbox)
 
     def predict(self):

@@ -19,7 +19,7 @@ LOGGER = logging.getLogger(__name__)
 import numpy as np
 
 from boxmot.motion.kalman_filters.ocsort_rgbd_kf import KalmanFilter
-from boxmot.utils.association import associate_with_depth, linear_assignment
+from boxmot.utils.association import associate_tlbr, linear_assignment
 from boxmot.utils.iou import get_asso_func
 from boxmot.utils.iou import run_asso_func
 
@@ -38,7 +38,7 @@ def k_previous_obs(observations, cur_age, k):
 
 
 # @nb.njit(fastmath=True, cache=True)
-# @nb.njit(cache=True)
+@nb.njit(cache=True)
 def convert_bbox_to_z(bbox):
     """
     Takes a bounding box in the form [x1, y1, x2, y2] and 
@@ -46,8 +46,6 @@ def convert_bbox_to_z(bbox):
     centre of the box and s is the scale/area and r is the 
     aspect ratio
     """
-    print(f"bbox: \n{bbox}")  # DEB
-    print("-" * 75)  # DEB
     w = bbox[2] - bbox[0]  # width
     h = bbox[3] - bbox[1]  # height
     x = bbox[0] + w / 2.0  # x coordinate of the centre
@@ -55,6 +53,24 @@ def convert_bbox_to_z(bbox):
     s = w * h  # scale is just area
     r = w / float(h + 1e-6)  # aspect ratio
     return np.array([x, y, s, r]).reshape((4, 1))
+
+
+# @nb.njit(fastmath=True, cache=True)
+def convert_bbox_to_z_tlbr(bbox):
+    """
+    Takes a bounding box in the form 
+    [u1, v1, u2, v2, d, conf] 
+    and  returns z in the form [u1, v1, u2, v2, d] 
+    where (u1, v1) is the bbox top left, (u2, v2) is the
+    bbox top right, and d is the bbox centre depth.
+    """
+    u1 = bbox[0]
+    v1 = bbox[1]
+    u2 = bbox[2]
+    v2 = bbox[3]
+    d = bbox[4]
+    z = np.array([u1, v1, u2, v2, d]).reshape((5, 1))
+    return z
 
 
 # NOTE: Replace every call to convert_bbox_to_z() method
@@ -152,6 +168,35 @@ def convert_x_to_bbox_with_depth(x, score=None):
     ).reshape(1, 5)
     return bbox
 
+
+# @nb.njit(fastmath=True, cache=True)
+def convert_x_to_bbox_tlbr(x, score=None):
+    """
+    Takes a bounding box in the centre form 
+    [u1, v1, u2, v2, d] 
+    and returns it in the form [u1, v1, u2, v2, d] where 
+    (u1, v1) is the top left and (u2, v 2) is the bottom 
+    right.
+    """
+    if score is None:
+        return np.array([
+            x[0], 
+            x[1], 
+            x[2], 
+            x[3],
+            x[4]
+        ]).reshape((1, 5))
+    else:
+        return np.array([
+            x[0], 
+            x[1], 
+            x[2], 
+            x[3], 
+            x[4],
+            score
+        ]).reshape((1, 6))
+
+
 # @nb.njit(fastmath=True, cache=True)
 def speed_direction(bbox1, bbox2):
     cx1, cy1 = (bbox1[0] + bbox1[2]) / 2.0, (bbox1[1] + bbox1[3]) / 2.0
@@ -196,60 +241,65 @@ class KalmanBoxTracker(object):
 
         """
         # Define constant velocity model.
-        # No. of state variables (x) = 9
+        # No. of state variables (x) = 10
         # Here, we have:
-        #   - 3 center coordinates (u, v, w)
-        #   - 1 scale/area (s)
-        #   - 1 aspect ratio (r)
-        #   - 4 change in velocity (du, dv, dw, ds)
+        #   - 4 tlbr coordinates ((u1, v1) & (u2, v2))
+        #   - 1 centre depth (d)
+        #   - 4 tlbr velocity ((du1, dv1) & (du2, dv2))
+        #   - 1 depth velocity (dd)
         # No. of measuement varaible (z) = 5
         # Here, we have:
-        #   - 3 center coordinates (u, v, w)
-        #   - 1 scale/area (s)
-        #   - 1 aspect ratio (r)
+        #   - 4 tlbr coordinates ((u1, v1) & (u2, v2))
+        #   - 1 centre depth (d)
         self.det_ind = det_ind
-        self.kf = KalmanFilter(dim_x=9, dim_z=5)
+        self.kf = KalmanFilter(dim_x=10, dim_z=5)
 
         # State transition matrix F
         self.kf.F = np.array(
             [
-                [1, 0, 0, 0, 0, 1, 0, 0, 0],  # Center u
-                [0, 1, 0, 0, 0, 0, 1, 0, 0],  # Center v
-                [0, 0, 1, 0, 0, 0, 0, 1, 0],  # Center w
-                [0, 0, 0, 1, 0, 0, 0, 0, 1],  # Scale s
-                [0, 0, 0, 0, 1, 0, 0, 0, 0],  # Aspect ratio r
-                [0, 0, 0, 0, 0, 1, 0, 0, 0],  # Velocity for u
-                [0, 0, 0, 0, 0, 0, 1, 0, 0],  # Velocity for v
-                [0, 0, 0, 0, 0, 0, 0, 1, 0],  # Velocity for w
-                [0, 0, 0, 0, 0, 0, 0, 0, 1],  # Velocity for scale s
+                [1, 0, 0, 0, 0, 1, 0, 0, 0, 0],  # tl u1
+                [0, 1, 0, 0, 0, 0, 1, 0, 0, 0],  # tl v1
+                [0, 0, 1, 0, 0, 0, 0, 1, 0, 0],  # br u2
+                [0, 0, 0, 1, 0, 0, 0, 0, 1, 0],  # br v2
+                [0, 0, 0, 0, 1, 0, 0, 0, 0, 1],  # centre depth d
+                [0, 0, 0, 0, 0, 1, 0, 0, 0, 0],  # velocity tl du1
+                [0, 0, 0, 0, 0, 0, 1, 0, 0, 0],  # velocity tl dv1
+                [0, 0, 0, 0, 0, 0, 0, 1, 0, 0],  # velocity br du2
+                [0, 0, 0, 0, 0, 0, 0, 0, 1, 0],  # velocity br dv2
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 1],  # velocity centre depth dd
             ]
         )
 
         # Measurement matrix H
         self.kf.H = np.array(
             [
-                [1, 0, 0, 0, 0, 0, 0, 0, 0],  # Center u
-                [0, 1, 0, 0, 0, 0, 0, 0, 0],  # Center v
-                [0, 0, 1, 0, 0, 0, 0, 0, 0],  # Center w
-                [0, 0, 0, 1, 0, 0, 0, 0, 0],  # Scale s
-                [0, 0, 0, 0, 1, 0, 0, 0, 0],  # Aspect ratio r
+                [1, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # tl u1
+                [0, 1, 0, 0, 0, 0, 0, 0, 0, 0],  # tl v1
+                [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],  # br u2
+                [0, 0, 0, 1, 0, 0, 0, 0, 0, 0],  # br v2
+                [0, 0, 0, 0, 1, 0, 0, 0, 0, 0],  # centre depth d
             ]
         )
 
-        # Measurement noise covariance R
-        self.kf.R[3:, 3:] *= 10.0  # Increase the measurement noise for scale and aspect ratio.
+        # # Measurement noise covariance R
+        # self.kf.R[3:, 3:] *= 10.0  # Increase the measurement noise for scale and aspect ratio.
         
         # State covariance P
         self.kf.P[5:, 5:] *= 1000.0  # Increase the uncertainty for the unobservable initial velocities.
         self.kf.P *= 10.0
 
         # Process noise covariance Q
-        self.kf.Q[-1, -1] *= 0.01  # Lower the uncertainty in process's scale velocity.
+        # self.kf.Q[-1, -1] *= 0.01  # Lower the uncertainty in process's scale velocity.
         self.kf.Q[5:, 5:] *= 0.01  # Lower the uncertainty all velocities of the process function.
 
-        # Initial state [u, v, w, s, r, du, dv, dw, ds]
+        # Initial state [u1, v1, u2, v2, d, du1, dv1, du2, dv2, dd]
         print(f"self.kf.x: {self.kf.x.shape}")  # DEB
-        self.kf.x[:5] = convert_bbox_to_z_with_depth(bbox)  # Convert bounding box to state variables.
+        print(f"self.kf.x: \n{self.kf.x}")  # DEB
+        print("-" * 75)
+        print(f"bbox shape: {bbox.shape}")  # DEB
+        print(f"bbox: \n{bbox}")  # DEB
+        print("-" * 75)  # DEB
+        self.kf.x[:5] =  convert_bbox_to_z_tlbr(bbox)  # Convert bounding box to state variables.
         
         self.time_since_update = 0
         self.id = KalmanBoxTracker.count
@@ -273,7 +323,7 @@ class KalmanBoxTracker(object):
         In our modified algorithm, where we make use of the bbox 
         centre depth, we added another element to the placeholder. In
         other words, we have a placholder of size 6 as follows:
-        [-1, -1, -1, -1, -1, -1]
+        [u1, v1, u2, v2, d, score] where d is depthl,
         """
         self.last_observation = np.array([-1, -1, -1, -1, -1, -1])  # placeholder
         self.observations = dict()
@@ -284,6 +334,10 @@ class KalmanBoxTracker(object):
     def update(self, bbox, cls, det_ind):
         """
         Updates the state vector with observed bbox.
+        INPUT:
+            bbox: List, [u1, v1, u2, v2, d, conf]
+            cls: int
+            det_ind: int
         """
         # if bbox is not None:
         #     print(f"bbox shape: {bbox.shape}")  # DEB
@@ -305,7 +359,10 @@ class KalmanBoxTracker(object):
                 # Estimate the track speed direction with 
                 # observations \Delta t steps away.
                 # self.velocity = speed_direction(previous_box, bbox)  # ORIGINAL
-                self.velocity = speed_direction_with_depth(previous_box, bbox)  # DEB
+                self.velocity = speed_direction_with_depth(
+                    bbox1=previous_box, 
+                    bbox2=bbox
+                )  # DEB
 
             # Insert new observations. This is a ugly way 
             # to maintain both self.observations and 
@@ -324,13 +381,17 @@ class KalmanBoxTracker(object):
             # print(f"joy_bbox shape: {joy_bbox.shape}")  # DEB
             # print(f"joy_bbox: \n{joy_bbox}")  # DEB
             # print("-" * 75)  # DEB
-            self.kf.update(convert_bbox_to_z_with_depth(bbox))  # DEB
+            # self.kf.update(convert_bbox_to_z_with_depth(bbox))  # DEB
+            print(f"bbox (not None) shape: {bbox.shape}")  # DEB
+            print(f"bbox (not None): \n{bbox}")  # DEB
+            print("-" * 75)  # DEB
+            self.kf.update(z=convert_bbox_to_z_tlbr(bbox)) 
         else:
             # if bbox is not None:  # DEB
-            #     print(f"bbox2 shape: {bbox.shape}")  # DEB
-            #     print(f"bbox2: \n{bbox}")  # DEB
-            #     print("-" * 75)  # DEB
-            self.kf.update(bbox)
+            # print(f"bbox (None) shape: {bbox.shape}")  # DEB
+            print(f"bbox (None): \n{bbox}")  # DEB
+            print("-" * 75)  # DEB
+            self.kf.update(z=bbox)
 
     def predict(self):
         """
@@ -348,7 +409,8 @@ class KalmanBoxTracker(object):
             self.hit_streak = 0
         self.time_since_update += 1
         # self.history.append(convert_x_to_bbox(self.kf.x))  # ORIGINAL
-        self.history.append(convert_x_to_bbox_with_depth(self.kf.x))  # DEB
+        # self.history.append(convert_x_to_bbox_with_depth(self.kf.x))  # DEB
+        self.history.append(convert_x_to_bbox_tlbr(x=self.kf.x))  # DEB
         return self.history[-1]
 
     def get_state(self):
@@ -356,10 +418,10 @@ class KalmanBoxTracker(object):
         Returns the current bounding box estimate.
         """
         # return convert_x_to_bbox(self.kf.x)  # ORIGINAL
-        return convert_x_to_bbox_with_depth(self.kf.x)  # DEB
+        return convert_x_to_bbox_tlbr(x=self.kf.x)  # DEB
 
 
-class OCSORTRGBD(object):
+class OCSORTRGBDTLBR(object):
     def __init__(
         self,
         per_class=True,
@@ -392,8 +454,8 @@ class OCSORTRGBD(object):
         Params:
           dets - a numpy array of detections in the format 
             [
-                [x1, y1, x2, y2, depth, score, class],
-                [x1, y1, x2, y2, depth, score, class],
+                [u1, v1, u2, v2, depth, score, class],
+                [u1, v1, u2, v2, depth, score, class],
                 ...
             ]
         Requires: this method must be called once for each 
@@ -487,9 +549,9 @@ class OCSORTRGBD(object):
         """
             First round of association
         """
-        # NOTE: Original code called associate() method instead of
-        # associate_with_depth() method.
-        matched, unmatched_dets, unmatched_trks = associate_with_depth(
+        # NOTE: Original OC-SORT + RGBD code called associate_with_depth() 
+        # method instead of associate_tlbr() method.
+        matched, unmatched_dets, unmatched_trks = associate_tlbr(
             detections=dets[:, 0:6], 
             trackers=trks, 
             asso_func=self.asso_func, 

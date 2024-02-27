@@ -1,8 +1,9 @@
 # Mikel Broström 🔥 Yolo Tracking 🧾 AGPL-3.0 license
 
 import numpy as np
+import numba as nb
 
-
+# @nb.njit(fastmath=True, cache=True)
 def iou_batch(bboxes1, bboxes2) -> np.ndarray:
     """
     From SORT: Computes IOU between two bboxes in the form [x1,y1,x2,y2]

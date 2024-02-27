@@ -103,7 +103,34 @@ import numpy as np
 from numpy import dot, zeros, eye, isscalar, shape
 import numpy.linalg as linalg
 from filterpy.stats import logpdf
-from filterpy.common import pretty_str, reshape_z
+# from filterpy.common import pretty_str, reshape_z  #  ORIGINAL
+from filterpy.common import pretty_str  # DEB
+
+import numba as nb
+
+
+# Following code is added by DEB to make
+# the code Nuba compatible.
+# ===========================================
+# @nb.njit(fastmath=True, cache=True)
+def reshape_z(z, dim_z, ndim):
+    """ ensure z is a (dim_z, 1) shaped vector"""
+
+    z = np.atleast_2d(z)
+    if z.shape[1] == dim_z:
+        z = z.T
+
+    if z.shape != (dim_z, 1):
+        raise ValueError('z must be convertible to shape ({}, 1)'.format(dim_z))
+
+    if ndim == 1:
+        z = z[:, 0]
+
+    if ndim == 0:
+        z = z[0, 0]
+
+    return z
+# +==========================================
 
 
 class KalmanFilter(object):
@@ -335,7 +362,7 @@ class KalmanFilter(object):
         self.attr_saved = None
         self.observed = False 
 
-
+    # @nb.njit(fastmath=True, cache=True)
     def predict(self, u=None, B=None, F=None, Q=None):
         """
         Predict next state (prior) using the Kalman filter state propagation
@@ -369,6 +396,9 @@ class KalmanFilter(object):
         if B is not None and u is not None:
             self.x = dot(F, self.x) + dot(B, u)
         else:
+            print(f"F shape: {F.shape}")  # DEB
+            print(f"x shape: {self.x.shape}")  # DEB
+            print("-" * 75)  # DEB
             self.x = dot(F, self.x)
 
         # P = FPF' + Q
@@ -379,7 +409,6 @@ class KalmanFilter(object):
         self.P_prior = self.P.copy()
 
 
-
     def freeze(self):
         """
             Save the parameters before non-observation forward
@@ -387,9 +416,11 @@ class KalmanFilter(object):
         self.attr_saved = deepcopy(self.__dict__)
 
 
+    # @nb.njit(fastmath=True, cache=True)
     def unfreeze(self):
         if self.attr_saved is not None:
-            new_history = deepcopy(self.history_obs)
+            new_history = deepcopy(self.history_obs)  # ORIGINAL
+            # new_history = np.copy(self.history_obs)  # DEB
             self.__dict__ = self.attr_saved
             # self.history_obs = new_history 
             self.history_obs = self.history_obs[:-1]
@@ -398,8 +429,8 @@ class KalmanFilter(object):
             index1 = indices[-2]
             index2 = indices[-1]
             box1 = new_history[index1]
-            print(f"box1 shape: {box1.shape}")  # DEB
-            print(f"box1: \n{box1}")  # DEB
+            # print(f"box1 shape: {box1.shape}")  # DEB
+            # print(f"box1: \n{box1}")  # DEB
             x1, y1, depth1, s1, r1 = box1 
             w1 = np.sqrt(s1 * r1)
             h1 = np.sqrt(s1 / r1)
@@ -438,6 +469,7 @@ class KalmanFilter(object):
                     self.predict()
 
 
+    # @nb.njit(fastmath=True, cache=True)
     def update(self, z, R=None, H=None):
         """
         Add a new measurement (z) to the Kalman filter.
@@ -499,6 +531,10 @@ class KalmanFilter(object):
 
         # y = z - Hx
         # error (residual) between measurement and prediction
+        print(f"z shape: {z.shape}")  # DEB
+        print(f"H shape: {H.shape}")  # DEB
+        print(f"x shape: {self.x.shape}")  # DEB
+        print("-" * 75)  # DEB
         self.y = z - dot(H, self.x)
 
         # common subexpression for speed
@@ -525,7 +561,8 @@ class KalmanFilter(object):
         self.P = dot(dot(I_KH, self.P), I_KH.T) + dot(dot(self.K, R), self.K.T)
 
         # save measurement and posterior state
-        self.z = deepcopy(z)
+        self.z = deepcopy(z)  # ORIGINAL
+        # self.z = np.copy(z) # DEB
         self.x_post = self.x.copy()
         self.P_post = self.P.copy()
 
@@ -702,8 +739,16 @@ class KalmanFilter(object):
         self.x_post = self.x.copy()
         self.P_post = self.P.copy()
 
-    def batch_filter(self, zs, Fs=None, Qs=None, Hs=None,
-                     Rs=None, Bs=None, us=None, update_first=False,
+    # @nb.njit(fastmath=True, cache=True)
+    def batch_filter(self, 
+                     zs, 
+                     Fs=None, 
+                     Qs=None, 
+                     Hs=None,
+                     Rs=None, 
+                     Bs=None, 
+                     us=None, 
+                     update_first=False,
                      saver=None):
         """ Batch processes a sequences of measurements.
         Parameters
@@ -838,7 +883,12 @@ class KalmanFilter(object):
 
         return (means, covariances, means_p, covariances_p)
 
-    def rts_smoother(self, Xs, Ps, Fs=None, Qs=None, inv=np.linalg.inv):
+    def rts_smoother(self, 
+                     Xs, 
+                     Ps, 
+                     Fs=None, 
+                     Qs=None, 
+                     inv=np.linalg.inv):
         """
         Runs the Rauch-Tung-Striebel Kalman smoother on a set of
         means and covariances computed by a Kalman filter. The usual input
@@ -902,7 +952,12 @@ class KalmanFilter(object):
 
         return (x, P, K, Pp)
 
-    def get_prediction(self, u=None, B=None, F=None, Q=None):
+    # @nb.njit(fastmath=True, cache=True)
+    def get_prediction(self, 
+                       u=None, 
+                       B=None, 
+                       F=None, 
+                       Q=None):
         """
         Predict next state (prior) using the Kalman filter state propagation
         equations and returns it without modifying the object.
@@ -945,6 +1000,7 @@ class KalmanFilter(object):
 
         return x, P
 
+    # @nb.njit(fastmath=True, cache=True)
     def get_update(self, z=None):
         """
         Computes the new estimate based on measurement `z` and returns it
@@ -990,6 +1046,7 @@ class KalmanFilter(object):
 
         return x, P
 
+    # @nb.njit(fastmath=True, cache=True)
     def residual_of(self, z):
         """
         Returns the residual for the given measurement (z). Does not alter
@@ -998,6 +1055,7 @@ class KalmanFilter(object):
         z = reshape_z(z, self.dim_z, self.x.ndim)
         return z - dot(self.H, self.x_prior)
 
+    # @nb.njit(fastmath=True, cache=True)
     def measurement_of_state(self, x):
         """
         Helper function that converts a state into a measurement.
@@ -1015,6 +1073,7 @@ class KalmanFilter(object):
         return dot(self.H, x)
 
     @property
+    # @nb.njit(fastmath=True, cache=True)
     def log_likelihood(self):
         """
         log-likelihood of the last measurement.
@@ -1024,6 +1083,7 @@ class KalmanFilter(object):
         return self._log_likelihood
 
     @property
+    # @nb.njit(fastmath=True, cache=True)
     def likelihood(self):
         """
         Computed from the log-likelihood. The log-likelihood can be very
@@ -1039,6 +1099,7 @@ class KalmanFilter(object):
         return self._likelihood
 
     @property
+    # @nb.njit(fastmath=True, cache=True)
     def mahalanobis(self):
         """"
         Mahalanobis distance of measurement. E.g. 3 means measurement
