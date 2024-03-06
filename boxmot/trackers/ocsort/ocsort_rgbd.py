@@ -46,8 +46,6 @@ def convert_bbox_to_z(bbox):
     centre of the box and s is the scale/area and r is the 
     aspect ratio
     """
-    print(f"bbox: \n{bbox}")  # DEB
-    print("-" * 75)  # DEB
     w = bbox[2] - bbox[0]  # width
     h = bbox[3] - bbox[1]  # height
     x = bbox[0] + w / 2.0  # x coordinate of the centre
@@ -60,7 +58,7 @@ def convert_bbox_to_z(bbox):
 # NOTE: Replace every call to convert_bbox_to_z() method
 # with convert_bbox_to_z_with_depth() method.
 # @nb.njit(fastmath=True, cache=True)
-@nb.njit(cache=True)
+# @nb.njit(cache=True)
 def convert_bbox_to_z_with_depth(bbox, depth_mat=None):
     """
     This method takes a bounding box in the form 
@@ -75,9 +73,6 @@ def convert_bbox_to_z_with_depth(bbox, depth_mat=None):
     # z will be of the form [u, v, s, r]
     # where (u, v) is the center of the box.
     z = convert_bbox_to_z(bbox).reshape(4,)
-    print(f"z shape: {z.shape}")  # DEB
-    print(f"z: \n{z}")  # DEB
-    print("-" * 75)  # DEB
     # Insert the depth of the centre of the bounding box
     # at index 2 of the z array.
     z1 = np.zeros(shape=(5,))
@@ -85,9 +80,6 @@ def convert_bbox_to_z_with_depth(bbox, depth_mat=None):
     z1[2] = centre_depth
     z1[3:] = z[2:]
     z1 = z1.reshape((5, 1))
-    print(f"z1 shape: {z1.shape}")  # DEB
-    print(f"z1: \n{z1}")  # DEB
-    print("-" * 75)  # DEB
     # z = np.insert(
     #     arr=z, 
     #     obj=2, 
@@ -248,7 +240,6 @@ class KalmanBoxTracker(object):
         self.kf.Q[5:, 5:] *= 0.01  # Lower the uncertainty all velocities of the process function.
 
         # Initial state [u, v, w, s, r, du, dv, dw, ds]
-        print(f"self.kf.x: {self.kf.x.shape}")  # DEB
         self.kf.x[:5] = convert_bbox_to_z_with_depth(bbox)  # Convert bounding box to state variables.
         
         self.time_since_update = 0
@@ -285,10 +276,6 @@ class KalmanBoxTracker(object):
         """
         Updates the state vector with observed bbox.
         """
-        # if bbox is not None:
-        #     print(f"bbox shape: {bbox.shape}")  # DEB
-        #     print(f"bbox: \n{bbox}")  # DEB
-        #     print("-" * 75)  # DEB
         self.det_ind = det_ind
         if bbox is not None:
             self.conf = bbox[-1]
@@ -319,17 +306,8 @@ class KalmanBoxTracker(object):
             self.history = []
             self.hits += 1
             self.hit_streak += 1
-            # self.kf.update(convert_bbox_to_z(bbox))  # ORIGINAL
-            # joy_bbox = convert_bbox_to_z_with_depth(bbox)  # DEB
-            # print(f"joy_bbox shape: {joy_bbox.shape}")  # DEB
-            # print(f"joy_bbox: \n{joy_bbox}")  # DEB
-            # print("-" * 75)  # DEB
             self.kf.update(convert_bbox_to_z_with_depth(bbox))  # DEB
         else:
-            # if bbox is not None:  # DEB
-            #     print(f"bbox2 shape: {bbox.shape}")  # DEB
-            #     print(f"bbox2: \n{bbox}")  # DEB
-            #     print("-" * 75)  # DEB
             self.kf.update(bbox)
 
     def predict(self):
@@ -430,15 +408,9 @@ class OCSORTRGBD(object):
             dets, 
             np.arange(len(dets)).reshape(-1, 1)
         ])
-        print(f"dets: {dets.shape}")  # DEB
-        print(f"dets: \n{dets}")  # DEB
-        print("-" * 75)  # DEB
         # Depth of bbox centre inserted in index 4.
         # Confidence values are now available at index 5.
         confs = dets[:, 5]
-        print(f"confs shape: {confs.shape}")  # DEB
-        print(f"confs: \n{confs}")  # DEB
-        print("-" * 75)  # DEB
 
         inds_low = confs > 0.1
         inds_high = confs < self.det_thresh
@@ -452,15 +424,11 @@ class OCSORTRGBD(object):
         # Get predicted locations from existing trackers.
         # Depth of bbox centre inserted in index 4.
         # Therefore, size along axis=1 increases by 1 to 6.
-        print(f"self.trackers: \n{self.trackers}")  # DEB
-        print("-" * 75)  # DEB 
         trks = np.zeros((len(self.trackers), 6))  
         to_del = []
         ret = []
         for t, trk in enumerate(trks):
             pos = self.trackers[t].predict()[0]
-            print(f"pos: \n{pos}")  # DEB
-            print("-" * 75)  # DEB
             trk[:] = [pos[0], pos[1], pos[2], pos[3], pos[4], 0]
             if np.any(np.isnan(pos)):
                 to_del.append(t)

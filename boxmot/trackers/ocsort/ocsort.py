@@ -28,8 +28,6 @@ def convert_bbox_to_z(bbox):
       [x,y,s,r] where x,y is the centre of the box and s is the scale/area and r is
       the aspect ratio
     """
-    print(f"bbox (not None): \n{bbox}")  # DEB
-    print("-" * 75)  # DEB
     w = bbox[2] - bbox[0]
     h = bbox[3] - bbox[1]
     x = bbox[0] + w / 2.0
@@ -165,13 +163,17 @@ class KalmanBoxTracker(object):
             self.hit_streak += 1
             self.kf.update(convert_bbox_to_z(bbox))
         else:
-            print(f"bbox (None): {bbox}")  # DEB
-            print("-" * 75)  # DEB
             self.kf.update(bbox)
 
     def predict(self):
         """
         Advances the state vector and returns the predicted bounding box estimate.
+        [
+            x_c (0), y_c(1), 
+            scale(2), ratio(3), 
+            vel_x_c(4), vel_y_c(5), 
+            vel_scale(6), vel_ratio(7)
+        ]
         """
         if (self.kf.x[6] + self.kf.x[2]) <= 0:
             self.kf.x[6] *= 0.0

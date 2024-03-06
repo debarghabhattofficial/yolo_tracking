@@ -396,9 +396,6 @@ class KalmanFilter(object):
         if B is not None and u is not None:
             self.x = dot(F, self.x) + dot(B, u)
         else:
-            print(f"F shape: {F.shape}")  # DEB
-            print(f"x shape: {self.x.shape}")  # DEB
-            print("-" * 75)  # DEB
             self.x = dot(F, self.x)
 
         # P = FPF' + Q
@@ -429,8 +426,6 @@ class KalmanFilter(object):
             index1 = indices[-2]
             index2 = indices[-1]
             box1 = new_history[index1]
-            # print(f"box1 shape: {box1.shape}")  # DEB
-            # print(f"box1: \n{box1}")  # DEB
             x1, y1, depth1, s1, r1 = box1 
             w1 = np.sqrt(s1 * r1)
             h1 = np.sqrt(s1 / r1)
@@ -531,10 +526,6 @@ class KalmanFilter(object):
 
         # y = z - Hx
         # error (residual) between measurement and prediction
-        print(f"z shape: {z.shape}")  # DEB
-        print(f"H shape: {H.shape}")  # DEB
-        print(f"x shape: {self.x.shape}")  # DEB
-        print("-" * 75)  # DEB
         self.y = z - dot(H, self.x)
 
         # common subexpression for speed

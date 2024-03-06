@@ -103,7 +103,34 @@ import numpy as np
 from numpy import dot, zeros, eye, isscalar, shape
 import numpy.linalg as linalg
 from filterpy.stats import logpdf
-from filterpy.common import pretty_str, reshape_z
+# from filterpy.common import pretty_str, reshape_z  #  ORIGINAL
+from filterpy.common import pretty_str  # DEB
+
+import numba as nb
+
+
+# Following code is added by DEB to make
+# the code Nuba compatible.
+# ===========================================
+# @nb.njit(fastmath=True, cache=True)
+def reshape_z(z, dim_z, ndim):
+    """ ensure z is a (dim_z, 1) shaped vector"""
+
+    z = np.atleast_2d(z)
+    if z.shape[1] == dim_z:
+        z = z.T
+
+    if z.shape != (dim_z, 1):
+        raise ValueError('z must be convertible to shape ({}, 1)'.format(dim_z))
+
+    if ndim == 1:
+        z = z[:, 0]
+
+    if ndim == 0:
+        z = z[0, 0]
+
+    return z
+# +==========================================
 
 
 class KalmanFilter(object):
@@ -335,7 +362,7 @@ class KalmanFilter(object):
         self.attr_saved = None
         self.observed = False 
 
-
+    # @nb.njit(fastmath=True, cache=True)
     def predict(self, u=None, B=None, F=None, Q=None):
         """
         Predict next state (prior) using the Kalman filter state propagation
@@ -379,7 +406,6 @@ class KalmanFilter(object):
         self.P_prior = self.P.copy()
 
 
-
     def freeze(self):
         """
             Save the parameters before non-observation forward
@@ -387,53 +413,53 @@ class KalmanFilter(object):
         self.attr_saved = deepcopy(self.__dict__)
 
 
+    # @nb.njit(fastmath=True, cache=True)
     def unfreeze(self):
         if self.attr_saved is not None:
-            new_history = deepcopy(self.history_obs)
+            new_history = deepcopy(self.history_obs)  # ORIGINAL
+            # new_history = np.copy(self.history_obs)  # DEB
             self.__dict__ = self.attr_saved
             # self.history_obs = new_history 
             self.history_obs = self.history_obs[:-1]
             occur = [int(d is None) for d in new_history]
             indices = np.where(np.array(occur)==0)[0]
-            index1 = indices[-2]
-            index2 = indices[-1]
-            box1 = new_history[index1]
-            x1, y1, s1, r1 = box1 
-            w1 = np.sqrt(s1 * r1)
-            h1 = np.sqrt(s1 / r1)
-            box2 = new_history[index2]
-            x2, y2, s2, r2 = box2 
-            w2 = np.sqrt(s2 * r2)
-            h2 = np.sqrt(s2 / r2)
-            time_gap = index2 - index1
-            dx = (x2-x1)/time_gap
-            dy = (y2-y1)/time_gap 
-            dw = (w2-w1)/time_gap 
-            dh = (h2-h1)/time_gap
-            for i in range(index2 - index1):
+            index_1 = indices[-2]
+            index_2 = indices[-1]
+            box_1 = new_history[index_1]
+            u1_1, v1_1, u2_1, v2_1, depth_1 = box_1
+            box_2 = new_history[index_2]
+            u1_2, v1_2, u2_2, v2_2, depth_2 = box_2
+            time_gap = index_2 - index_1
+            du1 = (u1_2 - u1_1) / time_gap
+            dv1 = (v1_2 - v1_1) / time_gap
+            du2 = (u2_2 - u2_1) / time_gap
+            dv2 = (v2_2 - v2_1) / time_gap
+            ddepth = (depth_2 - depth_1) / time_gap
+            for i in range(index_2 - index_1):
                 """
-                    The default virtual trajectory generation is by linear
-                    motion (constant speed hypothesis), you could modify this 
-                    part to implement your own. 
+                The default virtual trajectory generation is by linear
+                motion (constant speed hypothesis), you could modify this 
+                part to implement your own. 
                 """
-                x = x1 + (i+1) * dx 
-                y = y1 + (i+1) * dy 
-                w = w1 + (i+1) * dw 
-                h = h1 + (i+1) * dh
-                s = w * h 
-                r = w / float(h)
-                new_box = np.array([x, y, s, r]).reshape((4, 1))
+                u1_n = u1_1 + (i+1) * du1
+                v1_n = v1_1 + (i+1) * dv1
+                u2_n = u2_1 + (i+1) * du2
+                v2_n = v2_1 + (i+1) * dv2
+                depth_n = depth_1 + (i+1) * ddepth
+                new_box = np.array([u1_n, v1_n, u2_n, v2_n, depth_n]).reshape((5, 1))
                 """
-                    I still use predict-update loop here to refresh the parameters,
-                    but this can be faster by directly modifying the internal parameters
-                    as suggested in the paper. I keep this naive but slow way for 
-                    easy read and understanding
+                I still use predict-update loop here to refresh the 
+                parameters, but this can be faster by directly 
+                modifying the internal parameters as suggested in 
+                the paper. I keep this naive but slow way for 
+                easy read and understanding
                 """
                 self.update(new_box)
-                if not i == (index2-index1-1):
+                if not i == (index_2 - index_1 - 1):
                     self.predict()
 
 
+    # @nb.njit(fastmath=True, cache=True)
     def update(self, z, R=None, H=None):
         """
         Add a new measurement (z) to the Kalman filter.
@@ -521,7 +547,8 @@ class KalmanFilter(object):
         self.P = dot(dot(I_KH, self.P), I_KH.T) + dot(dot(self.K, R), self.K.T)
 
         # save measurement and posterior state
-        self.z = deepcopy(z)
+        self.z = deepcopy(z)  # ORIGINAL
+        # self.z = np.copy(z) # DEB
         self.x_post = self.x.copy()
         self.P_post = self.P.copy()
 
@@ -698,8 +725,16 @@ class KalmanFilter(object):
         self.x_post = self.x.copy()
         self.P_post = self.P.copy()
 
-    def batch_filter(self, zs, Fs=None, Qs=None, Hs=None,
-                     Rs=None, Bs=None, us=None, update_first=False,
+    # @nb.njit(fastmath=True, cache=True)
+    def batch_filter(self, 
+                     zs, 
+                     Fs=None, 
+                     Qs=None, 
+                     Hs=None,
+                     Rs=None, 
+                     Bs=None, 
+                     us=None, 
+                     update_first=False,
                      saver=None):
         """ Batch processes a sequences of measurements.
         Parameters
@@ -834,7 +869,12 @@ class KalmanFilter(object):
 
         return (means, covariances, means_p, covariances_p)
 
-    def rts_smoother(self, Xs, Ps, Fs=None, Qs=None, inv=np.linalg.inv):
+    def rts_smoother(self, 
+                     Xs, 
+                     Ps, 
+                     Fs=None, 
+                     Qs=None, 
+                     inv=np.linalg.inv):
         """
         Runs the Rauch-Tung-Striebel Kalman smoother on a set of
         means and covariances computed by a Kalman filter. The usual input
@@ -898,7 +938,12 @@ class KalmanFilter(object):
 
         return (x, P, K, Pp)
 
-    def get_prediction(self, u=None, B=None, F=None, Q=None):
+    # @nb.njit(fastmath=True, cache=True)
+    def get_prediction(self, 
+                       u=None, 
+                       B=None, 
+                       F=None, 
+                       Q=None):
         """
         Predict next state (prior) using the Kalman filter state propagation
         equations and returns it without modifying the object.
@@ -941,6 +986,7 @@ class KalmanFilter(object):
 
         return x, P
 
+    # @nb.njit(fastmath=True, cache=True)
     def get_update(self, z=None):
         """
         Computes the new estimate based on measurement `z` and returns it
@@ -986,6 +1032,7 @@ class KalmanFilter(object):
 
         return x, P
 
+    # @nb.njit(fastmath=True, cache=True)
     def residual_of(self, z):
         """
         Returns the residual for the given measurement (z). Does not alter
@@ -994,6 +1041,7 @@ class KalmanFilter(object):
         z = reshape_z(z, self.dim_z, self.x.ndim)
         return z - dot(self.H, self.x_prior)
 
+    # @nb.njit(fastmath=True, cache=True)
     def measurement_of_state(self, x):
         """
         Helper function that converts a state into a measurement.
@@ -1011,6 +1059,7 @@ class KalmanFilter(object):
         return dot(self.H, x)
 
     @property
+    # @nb.njit(fastmath=True, cache=True)
     def log_likelihood(self):
         """
         log-likelihood of the last measurement.
@@ -1020,6 +1069,7 @@ class KalmanFilter(object):
         return self._log_likelihood
 
     @property
+    # @nb.njit(fastmath=True, cache=True)
     def likelihood(self):
         """
         Computed from the log-likelihood. The log-likelihood can be very
@@ -1035,6 +1085,7 @@ class KalmanFilter(object):
         return self._likelihood
 
     @property
+    # @nb.njit(fastmath=True, cache=True)
     def mahalanobis(self):
         """"
         Mahalanobis distance of measurement. E.g. 3 means measurement

@@ -20,12 +20,14 @@ from boxmot.trackers.ocsort.ocsort_rgbd import OCSORTRGBD as OCSORTRGBD
 from boxmot.trackers.ocsort.ocsort_rgbd_tlbr import OCSORTRGBDTLBR as OCSORTRGBDTLBR
 from boxmot.trackers.ocsort.ocsort_rgbd_cmc import OCSORTRGBDCMC as OCSORTRGBDCMC
 from boxmot.trackers.botsort.bot_sort_rgbd import BoTSORTRGBD as BoTSORTRGBD
+from boxmot.trackers.botsort.bot_sort_rgbd_tlbr import BoTSORTRGBDTLBR as BoTSORTRGBDTLBR
 # =================================================================================
 
 TRACKERS = [
     "bytetrack", 
     "botsort",
     "botsort_rgbd",  # DEB
+    "botsort_rgbd_tlbr",  # DEB
     "strongsort", 
     "ocsort", 
     "ocsort_rgbd",  # DEB
@@ -45,6 +47,7 @@ __all__ = (
     "BYTETracker", 
     "BoTSORT", 
     "BoTSORTRGBD",  # DEB
+    "BoTSORTRGBDTLBR",  # DEB
     "DeepOCSORT", 
     "HybridSORT",
     "create_tracker", 

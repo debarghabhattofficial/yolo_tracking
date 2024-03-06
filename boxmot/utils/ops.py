@@ -108,48 +108,30 @@ def xywh2xyxy_with_depth(x):
         coordinates in (x1, y1, x2, y2, depth) format.
     """
     if isinstance(x, torch.Tensor):
-        print(f"INSIDE xywh2xyxy_with_depth()")  # DEB
-        print("-" * 75)  # DEB
         y = x.clone()
-        print(f"y: \n{y}")  # DEB
-        print("-" * 75)  # DEB
         # Remove the depth tensor from the input tensor.
         y = torch.cat((
             y[..., :2], 
             y[..., 2+1:]
         ), dim=-1)
-        print(f"y: \n{y}")  # DEB
-        print("-" * 75)  # DEB
         # Convert the bounding box coordinates from
         # (x, y, w, h) format to (x1, y1, x2, y2) format.
         y = xywh2xyxy(x=y)
-        print(f"y: \n{y}")  # DEB
-        print("-" * 75)  # DEB
         # Insert the depth tensor back to the tensor.
         y = torch.cat((
             y[..., :4], 
             x[..., 2].unsqueeze(dim=-1), 
             y[..., 4:]
         ), dim=-1)
-        print(f"y: \n{y}")  # DEB
-        print("-" * 75)  # DEB
     else:
         y = np.copy(x)
-        print(f"y: \n{y}")  # DEB
-        print("-" * 75)  # DEB
         # Remove the depth array from the input array.
         y = np.delete(arr=y, obj=2, axis=-1)
-        print(f"y: \n{y}")  # DEB
-        print("-" * 75)  # DEB
         # Convert the bounding box coordinates from
         # (x1, y1, x2, y2) format to (x, y, width, height) format.
         y = xywh2xyxy(x=y)
-        print(f"y: \n{y}")  # DEB
-        print("-" * 75)  # DEB
         # Insert the depth array back to the array.
         y = np.insert(arr=y, obj=4, values=x[..., 2], axis=-1)
-        print(f"y: \n{y}")  # DEB
-        print("-" * 75)  # DEB
         
     return y
 

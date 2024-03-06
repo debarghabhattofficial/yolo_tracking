@@ -12,18 +12,18 @@
 """
     This script is adopted from the SORT script by Alex Bewley alex@bewley.ai
 """
-import logging
-logging.basicConfig(level=logging.INFO)
-LOGGER = logging.getLogger(__name__)
-
 import numpy as np
 
-from boxmot.motion.kalman_filters.ocsort_rgbd_kf import KalmanFilter
+from boxmot.motion.kalman_filters.ocsort_rgbd_tlbr_kf import KalmanFilter
 from boxmot.utils.association import associate_tlbr, linear_assignment
 from boxmot.utils.iou import get_asso_func
 from boxmot.utils.iou import run_asso_func
 
 import numba as nb
+from boxmot.motion.cmc.sof import SparseOptFlow
+
+
+USE_CMC = False
 
 
 def k_previous_obs(observations, cur_age, k):
@@ -35,24 +35,6 @@ def k_previous_obs(observations, cur_age, k):
             return observations[cur_age - dt]
     max_age = max(observations.keys())
     return observations[max_age]
-
-
-# @nb.njit(fastmath=True, cache=True)
-@nb.njit(cache=True)
-def convert_bbox_to_z(bbox):
-    """
-    Takes a bounding box in the form [x1, y1, x2, y2] and 
-    returns z in the form [x, y, s, r] where (x, y) is the 
-    centre of the box and s is the scale/area and r is the 
-    aspect ratio
-    """
-    w = bbox[2] - bbox[0]  # width
-    h = bbox[3] - bbox[1]  # height
-    x = bbox[0] + w / 2.0  # x coordinate of the centre
-    y = bbox[1] + h / 2.0  # y coordinate of the centre
-    s = w * h  # scale is just area
-    r = w / float(h + 1e-6)  # aspect ratio
-    return np.array([x, y, s, r]).reshape((4, 1))
 
 
 # @nb.njit(fastmath=True, cache=True)
@@ -71,102 +53,6 @@ def convert_bbox_to_z_tlbr(bbox):
     d = bbox[4]
     z = np.array([u1, v1, u2, v2, d]).reshape((5, 1))
     return z
-
-
-# NOTE: Replace every call to convert_bbox_to_z() method
-# with convert_bbox_to_z_with_depth() method.
-# @nb.njit(fastmath=True, cache=True)
-@nb.njit(cache=True)
-def convert_bbox_to_z_with_depth(bbox, depth_mat=None):
-    """
-    This method takes a bounding box in the form 
-    [u1, v1, u2, v2, w] (where (u1, v1) is top left corner,  
-    (u2, v2) is the bottom right corner, and w is the depth),
-    and returns z in the form [u, v, w, s, r] where (u, v) 
-    is the centre of the box, w is the depth of the center, 
-    and s is the scale/area and r is the aspect ratio.
-    """ 
-    centre_depth = bbox[4]
-    bbox = np.delete(bbox, 4)
-    # z will be of the form [u, v, s, r]
-    # where (u, v) is the center of the box.
-    z = convert_bbox_to_z(bbox).reshape(4,)
-    print(f"z shape: {z.shape}")  # DEB
-    print(f"z: \n{z}")  # DEB
-    print("-" * 75)  # DEB
-    # Insert the depth of the centre of the bounding box
-    # at index 2 of the z array.
-    z1 = np.zeros(shape=(5,))
-    z1[:2] = z[:2]
-    z1[2] = centre_depth
-    z1[3:] = z[2:]
-    z1 = z1.reshape((5, 1))
-    print(f"z1 shape: {z1.shape}")  # DEB
-    print(f"z1: \n{z1}")  # DEB
-    print("-" * 75)  # DEB
-    # z = np.insert(
-    #     arr=z, 
-    #     obj=2, 
-    #     values=centre_depth
-    # ).reshape((5, 1))
-    # return z
-    return z1
-
-
-# @nb.njit(fastmath=True, cache=True)
-def convert_x_to_bbox(x, score=None):
-    """
-    Takes a bounding box in the centre form [x, y, s, r] 
-    and returns it in the form [x1, y1, x2, y2] where 
-    (x1, y1) is the top left and (x2, y2) is the bottom 
-    right.
-    """
-    w = np.sqrt(x[2] * x[3])
-    h = x[2] / w
-    if score is None:
-        return np.array([
-            x[0] - w / 2.0, 
-            x[1] - h / 2.0, 
-            x[0] + w / 2.0, 
-            x[1] + h / 2.0
-        ]).reshape((1, 4))
-    else:
-        return np.array([
-            x[0] - w / 2.0, 
-            x[1] - h / 2.0, 
-            x[0] + w / 2.0, 
-            x[1] + h / 2.0, 
-            score
-        ]).reshape((1, 5))
-
-
-# NOTE: Replace every call to convert_x_to_bbox() method
-# with convert_x_to_bbox_with_depth() method.
-# @nb.njit(fastmath=True, cache=True)
-def convert_x_to_bbox_with_depth(x, score=None):
-    """
-    This method takes a bounding box in the centre form
-    [u, v, w, s, r] and returns it in the form 
-    [u1, v1, u2, v2, w] where (u1, v1) is the top left,  
-    (u2, v2) is the bottom right, and w is the centre depth.
-    """
-    centre_depth = x[2]
-    x = np.delete(x, 2)
-    bbox = convert_x_to_bbox(x, score=None)
-    # bbox = np.zeros(shape=(5,))
-    # bbox[:4] = bbox_temp
-    # bbox[4:] = centre_depth
-    # bbox.reshape(1, 5)
-    # bbox = np.concatenate([
-    #     bbox, 
-    #     np.array([centre_depth])
-    # ]).reshape(1, 5)
-    bbox = np.insert(
-        arr=bbox, 
-        obj=4, 
-        values=centre_depth
-    ).reshape(1, 5)
-    return bbox
 
 
 # @nb.njit(fastmath=True, cache=True)
@@ -197,19 +83,10 @@ def convert_x_to_bbox_tlbr(x, score=None):
         ]).reshape((1, 6))
 
 
-# @nb.njit(fastmath=True, cache=True)
-def speed_direction(bbox1, bbox2):
-    cx1, cy1 = (bbox1[0] + bbox1[2]) / 2.0, (bbox1[1] + bbox1[3]) / 2.0
-    cx2, cy2 = (bbox2[0] + bbox2[2]) / 2.0, (bbox2[1] + bbox2[3]) / 2.0
-    speed = np.array([cy2 - cy1, cx2 - cx1])
-    norm = np.sqrt((cy2 - cy1) ** 2 + (cx2 - cx1) ** 2) + 1e-6
-    return speed / norm
-
-
 # NOTE: Replace every call to speed_direction() method
-# with speed_direction_with_depth() method.
+# with speed_direction_tlbr() method.
 # @nb.njit(fastmath=True, cache=True)
-def speed_direction_with_depth(bbox1, bbox2):
+def speed_direction_tlbr(bbox1, bbox2):
     # Coordinates for bbox1 centre
     cx1 = (bbox1[0] + bbox1[2]) / 2.0
     cy1 = (bbox1[1] + bbox1[3]) / 2.0
@@ -293,13 +170,7 @@ class KalmanBoxTracker(object):
         self.kf.Q[5:, 5:] *= 0.01  # Lower the uncertainty all velocities of the process function.
 
         # Initial state [u1, v1, u2, v2, d, du1, dv1, du2, dv2, dd]
-        print(f"self.kf.x: {self.kf.x.shape}")  # DEB
-        print(f"self.kf.x: \n{self.kf.x}")  # DEB
-        print("-" * 75)
-        print(f"bbox shape: {bbox.shape}")  # DEB
-        print(f"bbox: \n{bbox}")  # DEB
-        print("-" * 75)  # DEB
-        self.kf.x[:5] =  convert_bbox_to_z_tlbr(bbox)  # Convert bounding box to state variables.
+        self.kf.x[:5] = convert_bbox_to_z_tlbr(bbox)  # Convert bounding box to state variables.
         
         self.time_since_update = 0
         self.id = KalmanBoxTracker.count
@@ -339,10 +210,6 @@ class KalmanBoxTracker(object):
             cls: int
             det_ind: int
         """
-        # if bbox is not None:
-        #     print(f"bbox shape: {bbox.shape}")  # DEB
-        #     print(f"bbox: \n{bbox}")  # DEB
-        #     print("-" * 75)  # DEB
         self.det_ind = det_ind
         if bbox is not None:
             self.conf = bbox[-1]
@@ -358,11 +225,10 @@ class KalmanBoxTracker(object):
                     previous_box = self.last_observation
                 # Estimate the track speed direction with 
                 # observations \Delta t steps away.
-                # self.velocity = speed_direction(previous_box, bbox)  # ORIGINAL
-                self.velocity = speed_direction_with_depth(
+                self.velocity = speed_direction_tlbr(
                     bbox1=previous_box, 
                     bbox2=bbox
-                )  # DEB
+                )
 
             # Insert new observations. This is a ugly way 
             # to maintain both self.observations and 
@@ -376,21 +242,8 @@ class KalmanBoxTracker(object):
             self.history = []
             self.hits += 1
             self.hit_streak += 1
-            # self.kf.update(convert_bbox_to_z(bbox))  # ORIGINAL
-            # joy_bbox = convert_bbox_to_z_with_depth(bbox)  # DEB
-            # print(f"joy_bbox shape: {joy_bbox.shape}")  # DEB
-            # print(f"joy_bbox: \n{joy_bbox}")  # DEB
-            # print("-" * 75)  # DEB
-            # self.kf.update(convert_bbox_to_z_with_depth(bbox))  # DEB
-            print(f"bbox (not None) shape: {bbox.shape}")  # DEB
-            print(f"bbox (not None): \n{bbox}")  # DEB
-            print("-" * 75)  # DEB
             self.kf.update(z=convert_bbox_to_z_tlbr(bbox)) 
         else:
-            # if bbox is not None:  # DEB
-            # print(f"bbox (None) shape: {bbox.shape}")  # DEB
-            print(f"bbox (None): \n{bbox}")  # DEB
-            print("-" * 75)  # DEB
             self.kf.update(z=bbox)
 
     def predict(self):
@@ -398,42 +251,81 @@ class KalmanBoxTracker(object):
         Advances the state vector and returns the predicted 
         bounding box estimate.
         """
-        # Scale and scale velocity is represented by the 
-        # state variables at index 3 and 8 respectively.
-        if (self.kf.x[8] + self.kf.x[3]) <= 0:
-            self.kf.x[8] *= 0.0
+        # NOTE: There might be a need to change the code
+        # below. We either need to change the indices of
+        # the mean vector or remove the update statement.
+        # It was originally a part of the OC-SORT + RGBD
+        # algorithm.
+        # =================================================
+        # if (self.kf.x[8] + self.kf.x[3]) <= 0:
+        #     self.kf.x[8] *= 0.0
+        # =================================================
 
         self.kf.predict()
         self.age += 1
         if self.time_since_update > 0:
             self.hit_streak = 0
         self.time_since_update += 1
-        # self.history.append(convert_x_to_bbox(self.kf.x))  # ORIGINAL
-        # self.history.append(convert_x_to_bbox_with_depth(self.kf.x))  # DEB
-        self.history.append(convert_x_to_bbox_tlbr(x=self.kf.x))  # DEB
+        self.history.append(convert_x_to_bbox_tlbr(x=self.kf.x))
         return self.history[-1]
 
     def get_state(self):
         """
         Returns the current bounding box estimate.
         """
-        # return convert_x_to_bbox(self.kf.x)  # ORIGINAL
-        return convert_x_to_bbox_tlbr(x=self.kf.x)  # DEB
+        return convert_x_to_bbox_tlbr(x=self.kf.x)
+    
+    @staticmethod
+    def multi_gmc_tlbr(stracks, H=np.eye(2, 3)):
+        # NOTE: Make changes to this method to account for
+        # camera motion compensation while updating the
+        # state of the tracklets.
+        if len(stracks) > 0:
+            multi_mean = np.asarray([st.kf.x.copy() for st in stracks])
+            multi_covariance = np.asarray([st.kf.P for st in stracks])
+
+            R = H[:2, :2]
+            R8x8 = np.kron(np.eye(4, dtype=float), R)
+            t = H[:2, 2].reshape(-1, 1)
+
+            for i, (mean, cov) in enumerate(zip(multi_mean, multi_covariance)):
+                # Get transformed state mean vector.
+                sub_mean = np.concatenate([
+                    mean[:4],  # 4 x 1
+                    mean[5:9]  # 4 x 1
+                ])
+                sub_mean = R8x8.dot(sub_mean)
+                sub_mean[:2] += t
+                sub_mean[2:4] += t
+                mean[:4] = sub_mean[:4]
+                mean[5:9] = sub_mean[4:]
+
+                # Get transformed state covariance matrix.
+                sub_cov = np.block([
+                    [cov[:4, :4], cov[:4, 5:9]],
+                    [cov[5:9, :4], cov[5:9, 5:9]]
+                ])
+                sub_cov = R8x8.dot(sub_cov).dot(R8x8.transpose())
+                cov[:4, :4] = sub_cov[:4, :4]
+                cov[:4, 5:9] = sub_cov[:4, 4:]
+                cov[5:9, :4] = sub_cov[4:, :4]
+                cov[5:9, 5:9] = sub_cov[4:, 4:]
+
+                stracks[i].kf.x = mean
+                stracks[i].kf.P = cov
 
 
 class OCSORTRGBDTLBR(object):
-    def __init__(
-        self,
-        per_class=True,
-        det_thresh=0.2,
-        max_age=30,
-        min_hits=3,
-        asso_threshold=0.3,
-        delta_t=3,
-        asso_func="iou",
-        inertia=0.2,
-        use_byte=False,
-    ):
+    def __init__(self,
+                 per_class=True,
+                 det_thresh=0.2,
+                 max_age=30,
+                 min_hits=3,
+                 asso_threshold=0.2,
+                 delta_t=3,
+                 asso_func="iou",
+                 inertia=0.2,
+                 use_byte=False):
         """
         Sets key parameters for SORT
         """
@@ -448,6 +340,9 @@ class OCSORTRGBDTLBR(object):
         self.inertia = inertia
         self.use_byte = use_byte
         KalmanBoxTracker.count = 0
+
+        if USE_CMC:
+            self.cmc = SparseOptFlow()
 
     def update(self, dets, img):
         """
@@ -492,15 +387,9 @@ class OCSORTRGBDTLBR(object):
             dets, 
             np.arange(len(dets)).reshape(-1, 1)
         ])
-        print(f"dets: {dets.shape}")  # DEB
-        print(f"dets: \n{dets}")  # DEB
-        print("-" * 75)  # DEB
         # Depth of bbox centre inserted in index 4.
         # Confidence values are now available at index 5.
         confs = dets[:, 5]
-        print(f"confs shape: {confs.shape}")  # DEB
-        print(f"confs: \n{confs}")  # DEB
-        print("-" * 75)  # DEB
 
         inds_low = confs > 0.1
         inds_high = confs < self.det_thresh
@@ -514,21 +403,27 @@ class OCSORTRGBDTLBR(object):
         # Get predicted locations from existing trackers.
         # Depth of bbox centre inserted in index 4.
         # Therefore, size along axis=1 increases by 1 to 6.
-        print(f"self.trackers: \n{self.trackers}")  # DEB
-        print("-" * 75)  # DEB 
         trks = np.zeros((len(self.trackers), 6))  
         to_del = []
         ret = []
         for t, trk in enumerate(trks):
             pos = self.trackers[t].predict()[0]
-            print(f"pos: \n{pos}")  # DEB
-            print("-" * 75)  # DEB
             trk[:] = [pos[0], pos[1], pos[2], pos[3], pos[4], 0]
             if np.any(np.isnan(pos)):
                 to_del.append(t)
         trks = np.ma.compress_rows(np.ma.masked_invalid(trks))
         for t in reversed(to_del):
             self.trackers.pop(t)
+
+        # # =======================================================
+        # # NOTE: We will probablu have to apply camera compensation
+        # # in the following step before we apply the first round of
+        # # association.
+        # # Enter camera compensation code here.
+        if USE_CMC:
+            warp = self.cmc.apply(img, dets[:, :4])  # DEB
+            KalmanBoxTracker.multi_gmc_tlbr(self.trackers, warp)  # DEB
+        # # =======================================================
 
         # NOTE: In the else condition, np.array((0, 0)) changed 
         # to np.array((0, 0, 0)) to account for depth.
@@ -570,7 +465,8 @@ class OCSORTRGBDTLBR(object):
             )
 
         """
-            Second round of associaton by OCR
+            Second round of associaton by OCR 
+            (Observation-Centric Re-update)
         """
         # BYTE association
         if self.use_byte and len(dets_second) > 0 and unmatched_trks.shape[0] > 0:
