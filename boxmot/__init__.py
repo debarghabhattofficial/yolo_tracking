@@ -16,25 +16,25 @@ from boxmot.trackers.strongsort.strong_sort import StrongSORT
 # depth information from the RGBD camera for tracking.
 # Added by Debargha Bhattacharjee for the Shadow Mode project.
 # =================================================================================
-from boxmot.trackers.ocsort.ocsort_rgbd import OCSORTRGBD as OCSORTRGBD
-from boxmot.trackers.ocsort.ocsort_rgbd_tlbr import OCSORTRGBDTLBR as OCSORTRGBDTLBR
-from boxmot.trackers.ocsort.ocsort_rgbd_cmc import OCSORTRGBDCMC as OCSORTRGBDCMC
+from boxmot.trackers.ocsort.ocsort_d import OCSORT_D as OCSORT_D
+from boxmot.trackers.ocsort.ocsort_dt import OCSORT_DT as OCSORT_DT
 from boxmot.trackers.ocsort.ocsort_dtc import OCSORT_DTC as OCSORT_DTC
-from boxmot.trackers.botsort.bot_sort_rgbd import BoTSORTRGBD as BoTSORTRGBD
-from boxmot.trackers.botsort.bot_sort_rgbd_tlbr import BoTSORTRGBDTLBR as BoTSORTRGBDTLBR
+from boxmot.trackers.ocsort.ocsort_dtc_b import OCSORT_DTC_B as OCSORT_DTC_B
+from boxmot.trackers.botsort.bot_sort_dc import BoTSORT_DC as BoTSORT_DC
+from boxmot.trackers.botsort.bot_sort_dtc import BoTSORT_DTC as BoTSORT_DTC
 # =================================================================================
 
 TRACKERS = [
     "bytetrack", 
     "botsort",
-    "botsort_rgbd",  # DEB
-    "botsort_rgbd_tlbr",  # DEB
+    "botsort_dc",
+    "botsort_dtc",
     "strongsort", 
     "ocsort", 
-    "ocsort_rgbd",  # DEB
-    "ocsort_rgbd_tlbr",  # DEB
-    "ocsort_rgbd_cmc",  # DEB
-    "ocsort_dtc",  # DEB
+    "ocsort_d",
+    "ocsort_dt",
+    "ocsort_dtc",
+    "ocsort_dtc_b",
     "deepocsort", 
     "hybridsort"
 ]
@@ -43,14 +43,14 @@ __all__ = (
     "__version__",
     "StrongSORT", 
     "OCSORT", 
-    "OCSORTRGBD",  # DEB
-    "OCSORTRGBDTLBR",  # DEB
-    "OCSORTRGBDCMC",  # DEB
-    "OCSORT_DTC",  # DEB
+    "OCSORT_D",
+    "OCSORT_DT",
+    "OCSORT_DTC",
+    "OCSORT_DTC_B",
     "BYTETracker", 
     "BoTSORT", 
-    "BoTSORTRGBD",  # DEB
-    "BoTSORTRGBDTLBR",  # DEB
+    "BoTSORT_DC",
+    "BoTSORT_DTC",
     "DeepOCSORT", 
     "HybridSORT",
     "create_tracker", 

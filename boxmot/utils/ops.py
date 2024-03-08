@@ -24,7 +24,7 @@ def xyxy2xywh(x):
 # NOTE: Replace every call to xyxy2xywh() method in 
 # BoT-SORT + RGBD code with xyxy2xywh_with_depth() 
 # method.
-def xyxy2xywh_with_depth(x):
+def xyxy2xywh_dc(x):
     """
     Convert bounding box coordinates from 
     (x1, y1, x2, y2, depth) format to 
@@ -91,7 +91,7 @@ def xywh2xyxy(x):
 # NOTE: Replace every call to xywh2xyxy() method in 
 # BoT-SORT + RGBD code with xywh2xyxy_with_depth() 
 # method.
-def xywh2xyxy_with_depth(x):
+def xywh2xyxy_dc(x):
     """
     Convert bounding box coordinates from 
     (x_c, y_c, depth, width, height) format to

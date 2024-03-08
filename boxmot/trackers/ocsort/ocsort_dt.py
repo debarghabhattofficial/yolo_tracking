@@ -10,19 +10,14 @@
 # box.
 
 """
-    This script is adopted from the SORT script by Alex Bewley alex@bewley.ai
+This script is adopted from the SORT script by Alex Bewley alex@bewley.ai
 """
-import logging
-logging.basicConfig(level=logging.INFO)
-LOGGER = logging.getLogger(__name__)
-
 import numpy as np
 
-from boxmot.motion.kalman_filters.ocsort_dtc_kf import KalmanFilter
-from boxmot.utils.association import associate_dtc, linear_assignment
+from boxmot.motion.kalman_filters.ocsort_dt_kf import KalmanFilter
+from boxmot.utils.association import associate_dt, linear_assignment
 from boxmot.utils.iou import get_asso_func
 from boxmot.utils.iou import run_asso_func
-from boxmot.motion.cmc.sof import SparseOptFlow
 
 
 def k_previous_obs(observations, cur_age, k):
@@ -37,25 +32,7 @@ def k_previous_obs(observations, cur_age, k):
 
 
 # @nb.njit(fastmath=True, cache=True)
-# @nb.njit(cache=True)
-def convert_bbox_to_z(bbox):
-    """
-    Takes a bounding box in the form [x1, y1, x2, y2] and 
-    returns z in the form [x, y, s, r] where (x, y) is the 
-    centre of the box and s is the scale/area and r is the 
-    aspect ratio
-    """
-    w = bbox[2] - bbox[0]  # width
-    h = bbox[3] - bbox[1]  # height
-    x = bbox[0] + w / 2.0  # x coordinate of the centre
-    y = bbox[1] + h / 2.0  # y coordinate of the centre
-    s = w * h  # scale is just area
-    r = w / float(h + 1e-6)  # aspect ratio
-    return np.array([x, y, s, r]).reshape((4, 1))
-
-
-# @nb.njit(fastmath=True, cache=True)
-def convert_bbox_to_z_dtc(bbox):
+def convert_bbox_to_z_dt(bbox):
     """
     Takes a bounding box in the form 
     [u1, v1, u2, v2, d, conf] 
@@ -71,8 +48,9 @@ def convert_bbox_to_z_dtc(bbox):
     z = np.array([u1, v1, u2, v2, d]).reshape((5, 1))
     return z
 
+
 # @nb.njit(fastmath=True, cache=True)
-def convert_x_to_bbox_dtc(x, score=None):
+def convert_x_to_bbox_dt(x, score=None):
     """
     Takes a bounding box in the centre form 
     [u1, v1, u2, v2, d] 
@@ -99,19 +77,10 @@ def convert_x_to_bbox_dtc(x, score=None):
         ]).reshape((1, 6))
 
 
-# @nb.njit(fastmath=True, cache=True)
-def speed_direction(bbox1, bbox2):
-    cx1, cy1 = (bbox1[0] + bbox1[2]) / 2.0, (bbox1[1] + bbox1[3]) / 2.0
-    cx2, cy2 = (bbox2[0] + bbox2[2]) / 2.0, (bbox2[1] + bbox2[3]) / 2.0
-    speed = np.array([cy2 - cy1, cx2 - cx1])
-    norm = np.sqrt((cy2 - cy1) ** 2 + (cx2 - cx1) ** 2) + 1e-6
-    return speed / norm
-
-
 # NOTE: Replace every call to speed_direction() method
-# with speed_direction_dtc() method.
+# with speed_direction_dt() method.
 # @nb.njit(fastmath=True, cache=True)
-def speed_direction_dtc(bbox1, bbox2):
+def speed_direction_dt(bbox1, bbox2):
     # Coordinates for bbox1 centre
     cx1 = (bbox1[0] + bbox1[2]) / 2.0
     cy1 = (bbox1[1] + bbox1[3]) / 2.0
@@ -195,7 +164,7 @@ class KalmanBoxTracker(object):
         self.kf.Q[5:, 5:] *= 0.01  # Lower the uncertainty all velocities of the process function.
 
         # Initial state [u1, v1, u2, v2, d, du1, dv1, du2, dv2, dd]
-        self.kf.x[:5] =  convert_bbox_to_z_dtc(bbox)  # Convert bounding box to state variables.
+        self.kf.x[:5] = convert_bbox_to_z_dt(bbox)  # Convert bounding box to state variables.
         
         self.time_since_update = 0
         self.id = KalmanBoxTracker.count
@@ -250,7 +219,7 @@ class KalmanBoxTracker(object):
                     previous_box = self.last_observation
                 # Estimate the track speed direction with 
                 # observations \Delta t steps away.
-                self.velocity = speed_direction_dtc(
+                self.velocity = speed_direction_dt(
                     bbox1=previous_box, 
                     bbox2=bbox
                 )
@@ -267,7 +236,7 @@ class KalmanBoxTracker(object):
             self.history = []
             self.hits += 1
             self.hit_streak += 1
-            self.kf.update(z=convert_bbox_to_z_dtc(bbox)) 
+            self.kf.update(z=convert_bbox_to_z_dt(bbox)) 
         else:
             self.kf.update(z=bbox)
 
@@ -281,17 +250,17 @@ class KalmanBoxTracker(object):
         if self.time_since_update > 0:
             self.hit_streak = 0
         self.time_since_update += 1
-        self.history.append(convert_x_to_bbox_dtc(x=self.kf.x))
+        self.history.append(convert_x_to_bbox_dt(x=self.kf.x))
         return self.history[-1]
 
     def get_state(self):
         """
         Returns the current bounding box estimate.
         """
-        return convert_x_to_bbox_dtc(x=self.kf.x)
+        return convert_x_to_bbox_dt(x=self.kf.x)
     
     @staticmethod
-    def multi_gmc_dtc(stracks, H=np.eye(2, 3)):
+    def multi_gmc_dt(stracks, H=np.eye(2, 3)):
         # NOTE: Make changes to this method to account for
         # camera motion compensation while updating the
         # state of the tracklets.
@@ -330,7 +299,7 @@ class KalmanBoxTracker(object):
                 stracks[i].kf.P = cov
 
 
-class OCSORT_DTC(object):
+class OCSORT_DT(object):
     def __init__(self,
                  per_class=True,
                  det_thresh=0.2,
@@ -355,7 +324,6 @@ class OCSORT_DTC(object):
         self.inertia = inertia
         self.use_byte = use_byte
         KalmanBoxTracker.count = 0
-        self.cmc = SparseOptFlow()
 
     def update(self, dets, img):
         """
@@ -428,10 +396,6 @@ class OCSORT_DTC(object):
         for t in reversed(to_del):
             self.trackers.pop(t)
 
-        # Fix camera motion.
-        warp = self.cmc.apply(img, dets[:, :4])
-        KalmanBoxTracker.multi_gmc_dtc(self.trackers, warp)
-
         # NOTE: In the else condition, np.array((0, 0)) changed 
         # to np.array((0, 0, 0)) to account for depth.
         velocities = np.array(
@@ -451,9 +415,9 @@ class OCSORT_DTC(object):
         """
             First round of association
         """
-        # NOTE: Original OC-SORT + RGBD code called associate_dtc() 
-        # method instead of associate_dtc() method.
-        matched, unmatched_dets, unmatched_trks = associate_dtc(
+        # NOTE: Original OC-SORT + RGBD code called associate_wdt) 
+        # method instead of associate_dt() method.
+        matched, unmatched_dets, unmatched_trks = associate_dt(
             detections=dets[:, 0:6], 
             trackers=trks, 
             asso_func=self.asso_func, 

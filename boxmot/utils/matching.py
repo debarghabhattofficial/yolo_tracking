@@ -80,7 +80,7 @@ def linear_assignment(cost_matrix, thresh):
 # No difference between the two methods, only used for debugging
 # purpose while developing the BoT-SORT + RGBD algorithm. Remove if
 # not required.
-def linear_assignment_with_depth(cost_matrix, thresh):
+def linear_assignment_dc(cost_matrix, thresh):
     if cost_matrix.size == 0:
         return (
             np.empty((0, 2), dtype=int),
@@ -107,7 +107,7 @@ def linear_assignment_with_depth(cost_matrix, thresh):
 # No difference between the two methods, only used for debugging
 # purpose while developing the BoT-SORT + RGBD algorithm. Remove if
 # not required.
-def linear_assignment_tlbr(cost_matrix, thresh):
+def linear_assignment_dtc(cost_matrix, thresh):
     if cost_matrix.size == 0:
         return (
             np.empty((0, 2), dtype=int),
@@ -179,7 +179,7 @@ def iou_distance(atracks, btracks):
 
 # NOTE: Replace every call to iou_distance() method in
 # BoT-SORT + RGBD code with iou_distance_with_depth().
-def iou_distance_with_depth(atracks, btracks):
+def iou_distance_dc(atracks, btracks):
     """
     Compute cost based on IoU
     :type atracks: list[STrack]
@@ -193,14 +193,12 @@ def iou_distance_with_depth(atracks, btracks):
     ):
         # Get bbox top left and bottom right coordinates
         # for atracks.
-        # atlbrs = atracks  # ORIGINAL
-        atlbrs = atracks[:, :4]  # DEB
+        atlbrs = atracks[:, :4]
         err_msg = f"Unsupported 'atlbrs' 2nd dimension length '{atlbrs.shape[1]}', valid lenghts is 4."
         assert(atlbrs.shape[1] == 4), err_msg
         # Get bbox top left and bottom right coordinates
         # for btracks.
-        # btlbrs = btracks  # ORIGINAL
-        btlbrs = btracks[:, :4]  # DEB
+        btlbrs = btracks[:, :4]
         err_msg = f"Unsupported 'btlbrs' 2nd dimension length '{btlbrs.shape[1]}', valid lenghts is 4."
         assert(btlbrs.shape[1] == 4), err_msg
     else:
@@ -228,7 +226,7 @@ def iou_distance_with_depth(atracks, btracks):
 
 # NOTE: Replace every call to iou_distance() method in
 # BoT-SORT + RGBD code with iou_distance_with_depth().
-def iou_distance_tlbr(atracks, btracks):
+def iou_distance_dtc(atracks, btracks):
     """
     Compute cost based on IoU
     :type atracks: list[STrack]
@@ -242,14 +240,12 @@ def iou_distance_tlbr(atracks, btracks):
     ):
         # Get bbox top left and bottom right coordinates
         # for atracks.
-        # atlbrs = atracks  # ORIGINAL
-        atlbrs = atracks[:, :4]  # DEB
+        atlbrs = atracks[:, :4]
         err_msg = f"Unsupported 'atlbrs' 2nd dimension length '{atlbrs.shape[1]}', valid lenghts is 4."
         assert(atlbrs.shape[1] == 4), err_msg
         # Get bbox top left and bottom right coordinates
         # for btracks.
-        # btlbrs = btracks  # ORIGINAL
-        btlbrs = btracks[:, :4]  # DEB
+        btlbrs = btracks[:, :4]
         err_msg = f"Unsupported 'btlbrs' 2nd dimension length '{btlbrs.shape[1]}', valid lenghts is 4."
         assert(btlbrs.shape[1] == 4), err_msg
     else:
@@ -348,9 +344,9 @@ def gate_cost_matrix(kf, cost_matrix, tracks, detections, only_position=False):
 # This method does not differ from the original embedding_distance()
 # method. It is used for debugging purpose while developing the
 # BoT-SORT + RGBD algorithm.
-def embedding_distance_with_depth(tracks, 
-                                  detections, 
-                                  metric="cosine"):
+def embedding_distance_dc(tracks, 
+                          detections, 
+                          metric="cosine"):
     """
     :param tracks: list[STrack]
     :param detections: list[BaseTrack]
@@ -387,9 +383,9 @@ def embedding_distance_with_depth(tracks,
 # This method does not differ from the original embedding_distance()
 # method. It is used for debugging purpose while developing the
 # BoT-SORT + RGBD algorithm.
-def embedding_distance_tlbr(tracks, 
-                            detections, 
-                            metric="cosine"):
+def embedding_distance_dtc(tracks, 
+                           detections, 
+                           metric="cosine"):
     """
     :param tracks: list[STrack]
     :param detections: list[BaseTrack]
@@ -465,7 +461,7 @@ def fuse_score(cost_matrix, detections):
 # in BoT-SORT + RGBD algorithm.
 # No difference between the two methods, only used for debugging purpose while
 # developing the BoT-SORT + RGBD algorithm. Remove later if not required.
-def fuse_score_with_depth(cost_matrix, detections):
+def fuse_score_dc(cost_matrix, detections):
     if cost_matrix.size == 0:
         return cost_matrix
     iou_sim = 1 - cost_matrix
@@ -480,7 +476,7 @@ def fuse_score_with_depth(cost_matrix, detections):
 # in BoT-SORT + RGBD algorithm.
 # No difference between the two methods, only used for debugging purpose while
 # developing the BoT-SORT + RGBD algorithm. Remove later if not required.
-def fuse_score_tlbr(cost_matrix, detections):
+def fuse_score_dtc(cost_matrix, detections):
     if cost_matrix.size == 0:
         return cost_matrix
     iou_sim = 1 - cost_matrix

@@ -18,11 +18,19 @@ LOGGER = logging.getLogger(__name__)
 
 import numpy as np
 
-from boxmot.motion.kalman_filters.ocsort_dtc_kf import KalmanFilter
-from boxmot.utils.association import associate_dtc, linear_assignment
+from boxmot.motion.cmc.sof import SparseOptFlow
+from boxmot.motion.kalman_filters.ocsort_dtc_b_kf import KalmanFilter
+from boxmot.utils.association import associate_dtc_b, linear_assignment
 from boxmot.utils.iou import get_asso_func
 from boxmot.utils.iou import run_asso_func
-from boxmot.motion.cmc.sof import SparseOptFlow
+
+
+# =======================================================
+# The following code was added by DEB while trying out
+# to adopt the BoTSORT-based CMC code into OC-SORT. 
+from collections import deque
+import numpy as np
+# =======================================================
 
 
 def k_previous_obs(observations, cur_age, k):
@@ -37,25 +45,7 @@ def k_previous_obs(observations, cur_age, k):
 
 
 # @nb.njit(fastmath=True, cache=True)
-# @nb.njit(cache=True)
-def convert_bbox_to_z(bbox):
-    """
-    Takes a bounding box in the form [x1, y1, x2, y2] and 
-    returns z in the form [x, y, s, r] where (x, y) is the 
-    centre of the box and s is the scale/area and r is the 
-    aspect ratio
-    """
-    w = bbox[2] - bbox[0]  # width
-    h = bbox[3] - bbox[1]  # height
-    x = bbox[0] + w / 2.0  # x coordinate of the centre
-    y = bbox[1] + h / 2.0  # y coordinate of the centre
-    s = w * h  # scale is just area
-    r = w / float(h + 1e-6)  # aspect ratio
-    return np.array([x, y, s, r]).reshape((4, 1))
-
-
-# @nb.njit(fastmath=True, cache=True)
-def convert_bbox_to_z_dtc(bbox):
+def convert_bbox_to_z_dtc_b(bbox):
     """
     Takes a bounding box in the form 
     [u1, v1, u2, v2, d, conf] 
@@ -68,11 +58,16 @@ def convert_bbox_to_z_dtc(bbox):
     u2 = bbox[2]
     v2 = bbox[3]
     d = bbox[4]
-    z = np.array([u1, v1, u2, v2, d]).reshape((5, 1))
+    # z = np.array([u1, v1, u2, v2, d]).reshape((1, 5))  # ORIGINAL
+    z = np.array([u1, v1, u2, v2, d])  # DEB
+    print(f"z shape: {z.shape}")  # DEB
+    print(f"z: \n{z}")  # DEB
+    print("-" * 75)  # DEB
     return z
 
+
 # @nb.njit(fastmath=True, cache=True)
-def convert_x_to_bbox_dtc(x, score=None):
+def convert_x_to_bbox_dtc_b(x, score=None):
     """
     Takes a bounding box in the centre form 
     [u1, v1, u2, v2, d] 
@@ -108,10 +103,7 @@ def speed_direction(bbox1, bbox2):
     return speed / norm
 
 
-# NOTE: Replace every call to speed_direction() method
-# with speed_direction_dtc() method.
-# @nb.njit(fastmath=True, cache=True)
-def speed_direction_dtc(bbox1, bbox2):
+def speed_direction_dtc_b(bbox1, bbox2):
     # Coordinates for bbox1 centre
     cx1 = (bbox1[0] + bbox1[2]) / 2.0
     cy1 = (bbox1[1] + bbox1[3]) / 2.0
@@ -154,49 +146,61 @@ class KalmanBoxTracker(object):
         #   - 4 tlbr coordinates ((u1, v1) & (u2, v2))
         #   - 1 centre depth (d)
         self.det_ind = det_ind
-        self.kf = KalmanFilter(dim_x=10, dim_z=5)
+        # self.kf = KalmanFilter(dim_x=10, dim_z=5)  # ORIGINAL
+        self.kf = KalmanFilter()  # DEB
+        self.kf.initiate(
+            measurement=convert_bbox_to_z_dtc_b(bbox=bbox)
+        )  # DEB
+        print(f"self.kf type: {type(self.kf)}")  # DEB
+        print(f"self.kf: \n{self.kf}")  # DEB
+        print("-" * 75)  # DEB
 
-        # State transition matrix F
-        self.kf.F = np.array(
-            [
-                [1, 0, 0, 0, 0, 1, 0, 0, 0, 0],  # tl u1
-                [0, 1, 0, 0, 0, 0, 1, 0, 0, 0],  # tl v1
-                [0, 0, 1, 0, 0, 0, 0, 1, 0, 0],  # br u2
-                [0, 0, 0, 1, 0, 0, 0, 0, 1, 0],  # br v2
-                [0, 0, 0, 0, 1, 0, 0, 0, 0, 1],  # centre depth d
-                [0, 0, 0, 0, 0, 1, 0, 0, 0, 0],  # velocity tl du1
-                [0, 0, 0, 0, 0, 0, 1, 0, 0, 0],  # velocity tl dv1
-                [0, 0, 0, 0, 0, 0, 0, 1, 0, 0],  # velocity br du2
-                [0, 0, 0, 0, 0, 0, 0, 0, 1, 0],  # velocity br dv2
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 1],  # velocity centre depth dd
-            ]
-        )
+        # Following are the parameters for the Kalman filter
+        # in the original OC-SORT algorithm. We are using an
+        # alternative Kalman filter in this modified algorithm
+        # (adapted from BoTSORT + RGBD + TLBR algorithm).
+        # =======================================================
+        # # State transition matrix F
+        # self.kf.F = np.array(
+        #     [
+        #         [1, 0, 0, 0, 0, 1, 0, 0, 0, 0],  # tl u1
+        #         [0, 1, 0, 0, 0, 0, 1, 0, 0, 0],  # tl v1
+        #         [0, 0, 1, 0, 0, 0, 0, 1, 0, 0],  # br u2
+        #         [0, 0, 0, 1, 0, 0, 0, 0, 1, 0],  # br v2
+        #         [0, 0, 0, 0, 1, 0, 0, 0, 0, 1],  # centre depth d
+        #         [0, 0, 0, 0, 0, 1, 0, 0, 0, 0],  # velocity tl du1
+        #         [0, 0, 0, 0, 0, 0, 1, 0, 0, 0],  # velocity tl dv1
+        #         [0, 0, 0, 0, 0, 0, 0, 1, 0, 0],  # velocity br du2
+        #         [0, 0, 0, 0, 0, 0, 0, 0, 1, 0],  # velocity br dv2
+        #         [0, 0, 0, 0, 0, 0, 0, 0, 0, 1],  # velocity centre depth dd
+        #     ]
+        # )
 
-        # Measurement matrix H
-        self.kf.H = np.array(
-            [
-                [1, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # tl u1
-                [0, 1, 0, 0, 0, 0, 0, 0, 0, 0],  # tl v1
-                [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],  # br u2
-                [0, 0, 0, 1, 0, 0, 0, 0, 0, 0],  # br v2
-                [0, 0, 0, 0, 1, 0, 0, 0, 0, 0],  # centre depth d
-            ]
-        )
+        # # Measurement matrix H
+        # self.kf.H = np.array(
+        #     [
+        #         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # tl u1
+        #         [0, 1, 0, 0, 0, 0, 0, 0, 0, 0],  # tl v1
+        #         [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],  # br u2
+        #         [0, 0, 0, 1, 0, 0, 0, 0, 0, 0],  # br v2
+        #         [0, 0, 0, 0, 1, 0, 0, 0, 0, 0],  # centre depth d
+        #     ]
+        # )
 
         # # Measurement noise covariance R
         # self.kf.R[3:, 3:] *= 10.0  # Increase the measurement noise for scale and aspect ratio.
         
-        # State covariance P
-        self.kf.P[5:, 5:] *= 1000.0  # Increase the uncertainty for the unobservable initial velocities.
-        self.kf.P *= 10.0
+        # # State covariance P
+        # self.kf.P[5:, 5:] *= 1000.0  # Increase the uncertainty for the unobservable initial velocities.
+        # self.kf.P *= 10.0
 
-        # Process noise covariance Q
-        # self.kf.Q[-1, -1] *= 0.01  # Lower the uncertainty in process's scale velocity.
-        self.kf.Q[5:, 5:] *= 0.01  # Lower the uncertainty all velocities of the process function.
+        # # Process noise covariance Q
+        # # self.kf.Q[-1, -1] *= 0.01  # Lower the uncertainty in process's scale velocity.
+        # self.kf.Q[5:, 5:] *= 0.01  # Lower the uncertainty all velocities of the process function.
 
-        # Initial state [u1, v1, u2, v2, d, du1, dv1, du2, dv2, dd]
-        self.kf.x[:5] =  convert_bbox_to_z_dtc(bbox)  # Convert bounding box to state variables.
-        
+        # # Initial state [u1, v1, u2, v2, d, du1, dv1, du2, dv2, dd]
+        # self.kf.x[:5] = convert_bbox_to_z_dtc_b(bbox)  # Convert bounding box to state variables.
+        # =======================================================
         self.time_since_update = 0
         self.id = KalmanBoxTracker.count
         KalmanBoxTracker.count += 1
@@ -250,7 +254,7 @@ class KalmanBoxTracker(object):
                     previous_box = self.last_observation
                 # Estimate the track speed direction with 
                 # observations \Delta t steps away.
-                self.velocity = speed_direction_dtc(
+                self.velocity = speed_direction_dtc_b(
                     bbox1=previous_box, 
                     bbox2=bbox
                 )
@@ -267,9 +271,11 @@ class KalmanBoxTracker(object):
             self.history = []
             self.hits += 1
             self.hit_streak += 1
-            self.kf.update(z=convert_bbox_to_z_dtc(bbox)) 
-        else:
-            self.kf.update(z=bbox)
+            self.kf.update(
+                measurement=convert_bbox_to_z_dtc_b(bbox)
+            ) 
+        # else:
+        #     self.kf.update(measurement=bbox)
 
     def predict(self):
         """
@@ -281,59 +287,107 @@ class KalmanBoxTracker(object):
         if self.time_since_update > 0:
             self.hit_streak = 0
         self.time_since_update += 1
-        self.history.append(convert_x_to_bbox_dtc(x=self.kf.x))
+        self.history.append(convert_x_to_bbox_dtc_b(x=self.kf.mean))
         return self.history[-1]
 
     def get_state(self):
         """
         Returns the current bounding box estimate.
         """
-        return convert_x_to_bbox_dtc(x=self.kf.x)
+        print(f"self.kf type: {type(self.kf)}")  # DEB
+        print(f"self.kf: \n{self.kf}")  # DEB
+        print("-" * 75)  # DEB
+        print(f"self.kf.mean shape: \n{self.kf.mean.shape}")  # DEB
+        print(f"self.kf.mean: \n{self.kf.mean}")  # DEB
+        print("-" * 75)  # DEB
+        return convert_x_to_bbox_dtc_b(x=self.kf.mean)
     
     @staticmethod
-    def multi_gmc_dtc(stracks, H=np.eye(2, 3)):
+    def multi_gmc_dtc_b(stracks, H=np.eye(2, 3)):
+        print(f"H shape: {H.shape}")  # DEB
+        print(f"H: \n{H}")  # DEB
+        print("-" * 75)  # DEB
         # NOTE: Make changes to this method to account for
         # camera motion compensation while updating the
         # state of the tracklets.
         if len(stracks) > 0:
-            multi_mean = np.asarray([st.kf.x.copy() for st in stracks])
-            multi_covariance = np.asarray([st.kf.P for st in stracks])
+            multi_mean = np.asarray(
+                [st.kf.mean.copy() for st in stracks]
+            )
+            multi_covariance = np.asarray(
+                [st.kf.covariance for st in stracks]
+            )
 
             R = H[:2, :2]
+            print(f"R shape: {R.shape}")  # DEB
+            print(f"R: \n{R}")  # DEB
+            print("-" * 75)  # DEB
             R8x8 = np.kron(np.eye(4, dtype=float), R)
-            t = H[:2, 2].reshape(-1, 1)
+            print(f"R8x8 shape: {R8x8.shape}")  # DEB
+            print(f"R8x8: \n{R8x8}")  # DEB
+            print("-" * 75)  # DEB
+            t = H[:2, 2]
+            print(f"t shape: {t.shape}")  # DEB
+            print(f"t: \n{t}")  # DEB
+            print("-" * 75)  # DEB
 
             for i, (mean, cov) in enumerate(zip(multi_mean, multi_covariance)):
+                print(f"mean shape: {mean.shape}")  # DEB
+                print(f"mean: \n{mean}")  # DEB
+                print("-" * 75)  # DEB
                 # Get transformed state mean vector.
                 sub_mean = np.concatenate([
                     mean[:4],  # 4 x 1
                     mean[5:9]  # 4 x 1
                 ])
+                print(f"sub_mean shape: {sub_mean.shape}")  # DEB
+                print(f"sub_mean: \n{sub_mean}")
+                print("-" * 75)
                 sub_mean = R8x8.dot(sub_mean)
                 sub_mean[:2] += t
                 sub_mean[2:4] += t
+                print(f"sub_mean shape: {sub_mean.shape}")  # DEB
+                print(f"sub_mean: \n{sub_mean}")  # DEB
+                print("-" * 75)  # DEB
                 mean[:4] = sub_mean[:4]
                 mean[5:9] = sub_mean[4:]
+                print(f"mean shape: {mean.shape}")  # DEB
+                print(f"mean: \n{mean}")  # DEB
+                print("-" * 75)  # DEB
 
                 # Get transformed state covariance matrix.
+                print(f"cov shape: {cov.shape}")  # DEB
+                print(f"cov: \n{cov}")  # DEB
+                print("-" * 75)  # DEB
                 sub_cov = np.block([
                     [cov[:4, :4], cov[:4, 5:9]],
                     [cov[5:9, :4], cov[5:9, 5:9]]
                 ])
+                print(f"suv_cov shape: {sub_cov.shape}")  # DEB
+                print(f"sub_cov: \n{sub_cov}")  # DEB
+                print("-" * 75)  # DEB
                 sub_cov = R8x8.dot(sub_cov).dot(R8x8.transpose())
+                print(f"sub_cov shape: {sub_cov.shape}")  # DEB
+                print(f"sub_cov: \n{sub_cov}")  # DEB
+                print("-" * 75)  # DEB
                 cov[:4, :4] = sub_cov[:4, :4]
                 cov[:4, 5:9] = sub_cov[:4, 4:]
                 cov[5:9, :4] = sub_cov[4:, :4]
                 cov[5:9, 5:9] = sub_cov[4:, 4:]
+                print(f"cov shape: {cov.shape}")  # DEB
+                print(f"cov: \n{cov}")  # DEB
+                print("-" * 75)  # DEB
 
-                stracks[i].kf.x = mean
-                stracks[i].kf.P = cov
+                stracks[i].kf.mean = mean
+                stracks[i].kf.covariance = cov
 
 
-class OCSORT_DTC(object):
+class OCSORT_DTC_B(object):
     def __init__(self,
                  per_class=True,
                  det_thresh=0.2,
+                 track_high_thresh: float = 0.2,  # DEB
+                 track_low_thresh: float = 0.2,  # DEB
                  max_age=30,
                  min_hits=3,
                  asso_threshold=0.2,
@@ -349,13 +403,15 @@ class OCSORT_DTC(object):
         self.asso_threshold = asso_threshold
         self.trackers = []
         self.frame_count = 0
-        self.det_thresh = det_thresh
+        self.det_thresh = det_thresh  # ORIGINAL
+        self.track_high_thresh = track_high_thresh  # DEB
+        self.track_low_thresh = track_low_thresh  # DEB
         self.delta_t = delta_t
         self.asso_func = get_asso_func(asso_func)
         self.inertia = inertia
         self.use_byte = use_byte
-        KalmanBoxTracker.count = 0
-        self.cmc = SparseOptFlow()
+        KalmanBoxTracker.count = 0  # ORIGINAL
+        self.cmc = SparseOptFlow()  # DEB
 
     def update(self, dets, img):
         """
@@ -404,13 +460,28 @@ class OCSORT_DTC(object):
         # Confidence values are now available at index 5.
         confs = dets[:, 5]
 
+        # Find second round association detections.
         inds_low = confs > 0.1
         inds_high = confs < self.det_thresh
+        # ======================================================
+        # Following was the ORIGINAL code which
+        # is replaced by DEB's code (adapted from BoTSORT).
+        # ======================================================
+        # inds_second = np.logical_and(
+        #     inds_low, inds_high
+        # )  # self.det_thresh > score > 0.1, for second matching
+        # ======================================================
+        # DEB's code (adapted from BoTSORT).
         inds_second = np.logical_and(
-            inds_low, inds_high
-        )  # self.det_thresh > score > 0.1, for second matching
+            confs > self.track_low_thresh, 
+            confs < self.track_high_thresh
+        )
+        # ======================================================
         dets_second = dets[inds_second]  # detections for second matching
-        remain_inds = confs > self.det_thresh
+        
+        # Find first round association detections.
+        # remain_inds = confs > self.det_thresh  # ORIGINAL
+        remain_inds = confs > self.track_high_thresh  # DEB
         dets = dets[remain_inds]
 
         # Get predicted locations from existing trackers.
@@ -428,9 +499,14 @@ class OCSORT_DTC(object):
         for t in reversed(to_del):
             self.trackers.pop(t)
 
-        # Fix camera motion.
-        warp = self.cmc.apply(img, dets[:, :4])
-        KalmanBoxTracker.multi_gmc_dtc(self.trackers, warp)
+        # # =======================================================
+        # # NOTE: We will probablu have to apply camera compensation
+        # # in the following step before we apply the first round of
+        # # association.
+        # # Enter camera compensation code here.
+        warp = self.cmc.apply(img, dets[:, :4])  # DEB
+        KalmanBoxTracker.multi_gmc_dtc_b(self.trackers, warp)  # DEB
+        # # =======================================================
 
         # NOTE: In the else condition, np.array((0, 0)) changed 
         # to np.array((0, 0, 0)) to account for depth.
@@ -451,9 +527,9 @@ class OCSORT_DTC(object):
         """
             First round of association
         """
-        # NOTE: Original OC-SORT + RGBD code called associate_dtc() 
-        # method instead of associate_dtc() method.
-        matched, unmatched_dets, unmatched_trks = associate_dtc(
+        # NOTE: Original OC-SORT + RGBD code called associate_dtc_b() 
+        # method instead of associate_dtc_b() method.
+        matched, unmatched_dets, unmatched_trks = associate_dtc_b(
             detections=dets[:, 0:6], 
             trackers=trks, 
             asso_func=self.asso_func, 
@@ -472,8 +548,8 @@ class OCSORT_DTC(object):
             )
 
         """
-            Second round of associaton by OCR 
-            (Observation-Centric Re-update)
+        Second round of associaton by OCR 
+        (Observation-Centric Re-update).
         """
         # BYTE association
         if self.use_byte and len(dets_second) > 0 and unmatched_trks.shape[0] > 0:

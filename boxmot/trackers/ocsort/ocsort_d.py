@@ -18,11 +18,10 @@ LOGGER = logging.getLogger(__name__)
 
 import numpy as np
 
-from boxmot.motion.kalman_filters.ocsort_dtc_kf import KalmanFilter
-from boxmot.utils.association import associate_dtc, linear_assignment
+from boxmot.motion.kalman_filters.ocsort_d_kf import KalmanFilter
+from boxmot.utils.association import associate_d, linear_assignment
 from boxmot.utils.iou import get_asso_func
 from boxmot.utils.iou import run_asso_func
-from boxmot.motion.cmc.sof import SparseOptFlow
 
 
 def k_previous_obs(observations, cur_age, k):
@@ -54,50 +53,79 @@ def convert_bbox_to_z(bbox):
     return np.array([x, y, s, r]).reshape((4, 1))
 
 
+# NOTE: Replace every call to convert_bbox_to_z() method
+# with convert_bbox_to_z_d() method.
 # @nb.njit(fastmath=True, cache=True)
-def convert_bbox_to_z_dtc(bbox):
+# @nb.njit(cache=True)
+def convert_bbox_to_z_d(bbox, depth_mat=None):
     """
-    Takes a bounding box in the form 
-    [u1, v1, u2, v2, d, conf] 
-    and  returns z in the form [u1, v1, u2, v2, d] 
-    where (u1, v1) is the bbox top left, (u2, v2) is the
-    bbox top right, and d is the bbox centre depth.
-    """
-    u1 = bbox[0]
-    v1 = bbox[1]
-    u2 = bbox[2]
-    v2 = bbox[3]
-    d = bbox[4]
-    z = np.array([u1, v1, u2, v2, d]).reshape((5, 1))
-    return z
+    This method takes a bounding box in the form 
+    [u1, v1, u2, v2, w] (where (u1, v1) is top left corner,  
+    (u2, v2) is the bottom right corner, and w is the depth),
+    and returns z in the form [u, v, w, s, r] where (u, v) 
+    is the centre of the box, w is the depth of the center, 
+    and s is the scale/area and r is the aspect ratio.
+    """ 
+    centre_depth = bbox[4]
+    bbox = np.delete(bbox, 4)
+    # z will be of the form [u, v, s, r]
+    # where (u, v) is the center of the box.
+    z = convert_bbox_to_z(bbox).reshape(4,)
+    # Insert the depth of the centre of the bounding box
+    # at index 2 of the z array.
+    z_new = np.zeros(shape=(5,))
+    z_new[:2] = z[:2]
+    z_new[2] = centre_depth
+    z_new[3:] = z[2:]
+    z_new = z_new.reshape((5, 1))
+    return z_new
+
 
 # @nb.njit(fastmath=True, cache=True)
-def convert_x_to_bbox_dtc(x, score=None):
+def convert_x_to_bbox(x, score=None):
     """
-    Takes a bounding box in the centre form 
-    [u1, v1, u2, v2, d] 
-    and returns it in the form [u1, v1, u2, v2, d] where 
-    (u1, v1) is the top left and (u2, v 2) is the bottom 
+    Takes a bounding box in the centre form [x, y, s, r] 
+    and returns it in the form [x1, y1, x2, y2] where 
+    (x1, y1) is the top left and (x2, y2) is the bottom 
     right.
     """
+    w = np.sqrt(x[2] * x[3])
+    h = x[2] / w
     if score is None:
         return np.array([
-            x[0], 
-            x[1], 
-            x[2], 
-            x[3],
-            x[4]
-        ]).reshape((1, 5))
+            x[0] - w / 2.0, 
+            x[1] - h / 2.0, 
+            x[0] + w / 2.0, 
+            x[1] + h / 2.0
+        ]).reshape((1, 4))
     else:
         return np.array([
-            x[0], 
-            x[1], 
-            x[2], 
-            x[3], 
-            x[4],
+            x[0] - w / 2.0, 
+            x[1] - h / 2.0, 
+            x[0] + w / 2.0, 
+            x[1] + h / 2.0, 
             score
-        ]).reshape((1, 6))
+        ]).reshape((1, 5))
 
+
+# NOTE: Replace every call to convert_x_to_bbox() method
+# with convert_x_to_bbox_d() method.
+# @nb.njit(fastmath=True, cache=True)
+def convert_x_to_bbox_d(x, score=None):
+    """
+    This method takes a bounding box in the centre form
+    [u, v, w, s, r] and returns it in the form 
+    [u1, v1, u2, v2, w] where (u1, v1) is the top left,  
+    (u2, v2) is the bottom right, and w is the centre depth.
+    """
+    centre_depth = x[2]
+    x = np.delete(x, 2)
+    bbox = convert_x_to_bbox(x, score=None)
+    bbox_new = np.zeros(shape=(5,))
+    bbox_new[:4] = bbox[:4]
+    bbox_new[4:] = centre_depth
+    bbox_new = bbox_new.reshape(1, 5)
+    return bbox_new
 
 # @nb.njit(fastmath=True, cache=True)
 def speed_direction(bbox1, bbox2):
@@ -109,9 +137,9 @@ def speed_direction(bbox1, bbox2):
 
 
 # NOTE: Replace every call to speed_direction() method
-# with speed_direction_dtc() method.
+# with speed_direction_d() method.
 # @nb.njit(fastmath=True, cache=True)
-def speed_direction_dtc(bbox1, bbox2):
+def speed_direction_d(bbox1, bbox2):
     # Coordinates for bbox1 centre
     cx1 = (bbox1[0] + bbox1[2]) / 2.0
     cy1 = (bbox1[1] + bbox1[3]) / 2.0
@@ -143,59 +171,59 @@ class KalmanBoxTracker(object):
 
         """
         # Define constant velocity model.
-        # No. of state variables (x) = 10
+        # No. of state variables (x) = 9
         # Here, we have:
-        #   - 4 tlbr coordinates ((u1, v1) & (u2, v2))
-        #   - 1 centre depth (d)
-        #   - 4 tlbr velocity ((du1, dv1) & (du2, dv2))
-        #   - 1 depth velocity (dd)
+        #   - 3 center coordinates (u, v, w)
+        #   - 1 scale/area (s)
+        #   - 1 aspect ratio (r)
+        #   - 4 change in velocity (du, dv, dw, ds)
         # No. of measuement varaible (z) = 5
         # Here, we have:
-        #   - 4 tlbr coordinates ((u1, v1) & (u2, v2))
-        #   - 1 centre depth (d)
+        #   - 3 center coordinates (u, v, w)
+        #   - 1 scale/area (s)
+        #   - 1 aspect ratio (r)
         self.det_ind = det_ind
-        self.kf = KalmanFilter(dim_x=10, dim_z=5)
+        self.kf = KalmanFilter(dim_x=9, dim_z=5)
 
         # State transition matrix F
         self.kf.F = np.array(
             [
-                [1, 0, 0, 0, 0, 1, 0, 0, 0, 0],  # tl u1
-                [0, 1, 0, 0, 0, 0, 1, 0, 0, 0],  # tl v1
-                [0, 0, 1, 0, 0, 0, 0, 1, 0, 0],  # br u2
-                [0, 0, 0, 1, 0, 0, 0, 0, 1, 0],  # br v2
-                [0, 0, 0, 0, 1, 0, 0, 0, 0, 1],  # centre depth d
-                [0, 0, 0, 0, 0, 1, 0, 0, 0, 0],  # velocity tl du1
-                [0, 0, 0, 0, 0, 0, 1, 0, 0, 0],  # velocity tl dv1
-                [0, 0, 0, 0, 0, 0, 0, 1, 0, 0],  # velocity br du2
-                [0, 0, 0, 0, 0, 0, 0, 0, 1, 0],  # velocity br dv2
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 1],  # velocity centre depth dd
+                [1, 0, 0, 0, 0, 1, 0, 0, 0],  # Center u
+                [0, 1, 0, 0, 0, 0, 1, 0, 0],  # Center v
+                [0, 0, 1, 0, 0, 0, 0, 1, 0],  # Center w
+                [0, 0, 0, 1, 0, 0, 0, 0, 1],  # Scale s
+                [0, 0, 0, 0, 1, 0, 0, 0, 0],  # Aspect ratio r
+                [0, 0, 0, 0, 0, 1, 0, 0, 0],  # Velocity for u
+                [0, 0, 0, 0, 0, 0, 1, 0, 0],  # Velocity for v
+                [0, 0, 0, 0, 0, 0, 0, 1, 0],  # Velocity for w
+                [0, 0, 0, 0, 0, 0, 0, 0, 1],  # Velocity for scale s
             ]
         )
 
         # Measurement matrix H
         self.kf.H = np.array(
             [
-                [1, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # tl u1
-                [0, 1, 0, 0, 0, 0, 0, 0, 0, 0],  # tl v1
-                [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],  # br u2
-                [0, 0, 0, 1, 0, 0, 0, 0, 0, 0],  # br v2
-                [0, 0, 0, 0, 1, 0, 0, 0, 0, 0],  # centre depth d
+                [1, 0, 0, 0, 0, 0, 0, 0, 0],  # Center u
+                [0, 1, 0, 0, 0, 0, 0, 0, 0],  # Center v
+                [0, 0, 1, 0, 0, 0, 0, 0, 0],  # Center w
+                [0, 0, 0, 1, 0, 0, 0, 0, 0],  # Scale s
+                [0, 0, 0, 0, 1, 0, 0, 0, 0],  # Aspect ratio r
             ]
         )
 
-        # # Measurement noise covariance R
-        # self.kf.R[3:, 3:] *= 10.0  # Increase the measurement noise for scale and aspect ratio.
+        # Measurement noise covariance R
+        self.kf.R[3:, 3:] *= 10.0  # Increase the measurement noise for scale and aspect ratio.
         
         # State covariance P
         self.kf.P[5:, 5:] *= 1000.0  # Increase the uncertainty for the unobservable initial velocities.
         self.kf.P *= 10.0
 
         # Process noise covariance Q
-        # self.kf.Q[-1, -1] *= 0.01  # Lower the uncertainty in process's scale velocity.
+        self.kf.Q[-1, -1] *= 0.01  # Lower the uncertainty in process's scale velocity.
         self.kf.Q[5:, 5:] *= 0.01  # Lower the uncertainty all velocities of the process function.
 
-        # Initial state [u1, v1, u2, v2, d, du1, dv1, du2, dv2, dd]
-        self.kf.x[:5] =  convert_bbox_to_z_dtc(bbox)  # Convert bounding box to state variables.
+        # Initial state [u, v, w, s, r, du, dv, dw, ds]
+        self.kf.x[:5] = convert_bbox_to_z_d(bbox)  # Convert bounding box to state variables.
         
         self.time_since_update = 0
         self.id = KalmanBoxTracker.count
@@ -219,7 +247,7 @@ class KalmanBoxTracker(object):
         In our modified algorithm, where we make use of the bbox 
         centre depth, we added another element to the placeholder. In
         other words, we have a placholder of size 6 as follows:
-        [u1, v1, u2, v2, d, score] where d is depthl,
+        [-1, -1, -1, -1, -1, -1]
         """
         self.last_observation = np.array([-1, -1, -1, -1, -1, -1])  # placeholder
         self.observations = dict()
@@ -230,10 +258,6 @@ class KalmanBoxTracker(object):
     def update(self, bbox, cls, det_ind):
         """
         Updates the state vector with observed bbox.
-        INPUT:
-            bbox: List, [u1, v1, u2, v2, d, conf]
-            cls: int
-            det_ind: int
         """
         self.det_ind = det_ind
         if bbox is not None:
@@ -250,10 +274,7 @@ class KalmanBoxTracker(object):
                     previous_box = self.last_observation
                 # Estimate the track speed direction with 
                 # observations \Delta t steps away.
-                self.velocity = speed_direction_dtc(
-                    bbox1=previous_box, 
-                    bbox2=bbox
-                )
+                self.velocity = speed_direction_d(previous_box, bbox)
 
             # Insert new observations. This is a ugly way 
             # to maintain both self.observations and 
@@ -267,80 +288,48 @@ class KalmanBoxTracker(object):
             self.history = []
             self.hits += 1
             self.hit_streak += 1
-            self.kf.update(z=convert_bbox_to_z_dtc(bbox)) 
+            self.kf.update(convert_bbox_to_z_d(bbox))
         else:
-            self.kf.update(z=bbox)
+            self.kf.update(bbox)
 
     def predict(self):
         """
         Advances the state vector and returns the predicted 
         bounding box estimate.
         """
+        # Scale and scale velocity is represented by the 
+        # state variables at index 3 and 8 respectively.
+        if (self.kf.x[8] + self.kf.x[3]) <= 0:
+            self.kf.x[8] *= 0.0
+
         self.kf.predict()
         self.age += 1
         if self.time_since_update > 0:
             self.hit_streak = 0
         self.time_since_update += 1
-        self.history.append(convert_x_to_bbox_dtc(x=self.kf.x))
+        self.history.append(convert_x_to_bbox_d(self.kf.x))
         return self.history[-1]
 
     def get_state(self):
         """
         Returns the current bounding box estimate.
         """
-        return convert_x_to_bbox_dtc(x=self.kf.x)
-    
-    @staticmethod
-    def multi_gmc_dtc(stracks, H=np.eye(2, 3)):
-        # NOTE: Make changes to this method to account for
-        # camera motion compensation while updating the
-        # state of the tracklets.
-        if len(stracks) > 0:
-            multi_mean = np.asarray([st.kf.x.copy() for st in stracks])
-            multi_covariance = np.asarray([st.kf.P for st in stracks])
-
-            R = H[:2, :2]
-            R8x8 = np.kron(np.eye(4, dtype=float), R)
-            t = H[:2, 2].reshape(-1, 1)
-
-            for i, (mean, cov) in enumerate(zip(multi_mean, multi_covariance)):
-                # Get transformed state mean vector.
-                sub_mean = np.concatenate([
-                    mean[:4],  # 4 x 1
-                    mean[5:9]  # 4 x 1
-                ])
-                sub_mean = R8x8.dot(sub_mean)
-                sub_mean[:2] += t
-                sub_mean[2:4] += t
-                mean[:4] = sub_mean[:4]
-                mean[5:9] = sub_mean[4:]
-
-                # Get transformed state covariance matrix.
-                sub_cov = np.block([
-                    [cov[:4, :4], cov[:4, 5:9]],
-                    [cov[5:9, :4], cov[5:9, 5:9]]
-                ])
-                sub_cov = R8x8.dot(sub_cov).dot(R8x8.transpose())
-                cov[:4, :4] = sub_cov[:4, :4]
-                cov[:4, 5:9] = sub_cov[:4, 4:]
-                cov[5:9, :4] = sub_cov[4:, :4]
-                cov[5:9, 5:9] = sub_cov[4:, 4:]
-
-                stracks[i].kf.x = mean
-                stracks[i].kf.P = cov
+        return convert_x_to_bbox_d(self.kf.x)
 
 
-class OCSORT_DTC(object):
-    def __init__(self,
-                 per_class=True,
-                 det_thresh=0.2,
-                 max_age=30,
-                 min_hits=3,
-                 asso_threshold=0.2,
-                 delta_t=3,
-                 asso_func="iou",
-                 inertia=0.2,
-                 use_byte=False):
+class OCSORT_D(object):
+    def __init__(
+        self,
+        per_class=True,
+        det_thresh=0.2,
+        max_age=30,
+        min_hits=3,
+        asso_threshold=0.3,
+        delta_t=3,
+        asso_func="iou",
+        inertia=0.2,
+        use_byte=False,
+    ):
         """
         Sets key parameters for SORT
         """
@@ -355,15 +344,14 @@ class OCSORT_DTC(object):
         self.inertia = inertia
         self.use_byte = use_byte
         KalmanBoxTracker.count = 0
-        self.cmc = SparseOptFlow()
 
     def update(self, dets, img):
         """
         Params:
           dets - a numpy array of detections in the format 
             [
-                [u1, v1, u2, v2, depth, score, class],
-                [u1, v1, u2, v2, depth, score, class],
+                [x1, y1, x2, y2, depth, score, class],
+                [x1, y1, x2, y2, depth, score, class],
                 ...
             ]
         Requires: this method must be called once for each 
@@ -428,10 +416,6 @@ class OCSORT_DTC(object):
         for t in reversed(to_del):
             self.trackers.pop(t)
 
-        # Fix camera motion.
-        warp = self.cmc.apply(img, dets[:, :4])
-        KalmanBoxTracker.multi_gmc_dtc(self.trackers, warp)
-
         # NOTE: In the else condition, np.array((0, 0)) changed 
         # to np.array((0, 0, 0)) to account for depth.
         velocities = np.array(
@@ -451,9 +435,9 @@ class OCSORT_DTC(object):
         """
             First round of association
         """
-        # NOTE: Original OC-SORT + RGBD code called associate_dtc() 
-        # method instead of associate_dtc() method.
-        matched, unmatched_dets, unmatched_trks = associate_dtc(
+        # NOTE: Original code called associate() method instead of
+        # associate_d() method.
+        matched, unmatched_dets, unmatched_trks = associate_d(
             detections=dets[:, 0:6], 
             trackers=trks, 
             asso_func=self.asso_func, 
@@ -472,8 +456,7 @@ class OCSORT_DTC(object):
             )
 
         """
-            Second round of associaton by OCR 
-            (Observation-Centric Re-update)
+            Second round of associaton by OCR
         """
         # BYTE association
         if self.use_byte and len(dets_second) > 0 and unmatched_trks.shape[0] > 0:
