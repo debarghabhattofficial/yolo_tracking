@@ -9,7 +9,6 @@ from boxmot.motion.cmc.sof import SparseOptFlow
 from boxmot.motion.kalman_filters.botsort_dc_kf import KalmanFilter
 from boxmot.trackers.botsort.basetrack import BaseTrack, TrackState
 from boxmot.utils.matching import (
-    embedding_distance_dc, 
     fuse_score_dc, 
     iou_distance_dc, 
     linear_assignment_dc
@@ -25,10 +24,7 @@ class STrack(BaseTrack):
 
     def __init__(self, det, feat=None, feat_history=50):
         # wait activate
-        # self.xywh = xyxy2xywh(det[0:4])  # (x1, y1, x2, y2) --> (xc, yc, w, h)  # ORIGINAL
-        # NOTE: Replace every instance of self.xywh with
-        # self.xywh (later self.sydwh) in the code.
-        self.xywh_with_depth = xyxy2xywh_dc(det[0:5])  # (x1, y1, x2, y2, depth) --> (xc, yc, depth, w, h)
+        self.xywh_dc = xyxy2xywh_dc(det[0:5])  # (x1, y1, x2, y2, depth) --> (xc, yc, depth, w, h)
         self.score = det[5]
         self.cls = det[6]
         self.det_ind = det[7]
@@ -103,31 +99,10 @@ class STrack(BaseTrack):
                 stracks[i].mean = mean
                 stracks[i].covariance = cov
 
-    @staticmethod
-    def multi_gmc(stracks, H=np.eye(2, 3)):
-        # NOTE: Make changes to this method to account for
-        # camera motion compensation while updating the
-        # state of the tracklets.
-        if len(stracks) > 0:
-            multi_mean = np.asarray([st.mean.copy() for st in stracks])
-            multi_covariance = np.asarray([st.covariance for st in stracks])
-
-            R = H[:2, :2]
-            R8x8 = np.kron(np.eye(4, dtype=float), R)
-            t = H[:2, 2]
-
-            for i, (mean, cov) in enumerate(zip(multi_mean, multi_covariance)):
-                mean = R8x8.dot(mean)
-                mean[:2] += t
-                cov = R8x8.dot(cov).dot(R8x8.transpose())
-
-                stracks[i].mean = mean
-                stracks[i].covariance = cov
-
     # NOTE: Replace every call to self.multi_gmc() method with
-    # self.multi_gmc_with_depth() method.
+    # self.multi_gmc_dc() method.
     @staticmethod
-    def multi_gmc_with_depth(stracks, H=np.eye(2, 3)):
+    def multi_gmc_dc(stracks, H=np.eye(2, 3)):
         # NOTE: Make changes to this method to account for
         # camera motion compensation while updating the
         # state of the tracklets.
@@ -174,39 +149,13 @@ class STrack(BaseTrack):
                 stracks[i].mean = mean
                 stracks[i].covariance = cov
 
-    # NOTE: Replace every call to self.multi_gmc() method with
-    # self.multi_gmc_with_depth() method.
-    @staticmethod
-    def multi_gmc_with_depth2(stracks, H=np.eye(2, 3)):
-        # NOTE: Make changes to this method to account for
-        # camera motion compensation while updating the
-        # state of the tracklets.
-        if len(stracks) > 0:
-            multi_mean = np.asarray([st.mean.copy() for st in stracks])
-            multi_covariance = np.asarray([st.covariance for st in stracks])
-
-            R = H[:2, :2]
-            # Changed the identity matrix in Knornocker product
-            # from 4x4 to 5x5 since out measurement vector has
-            # 5 measurement varibles (x, y, depth, w, h).
-            R10x10 = np.kron(np.eye(5, dtype=float), R)
-            t = H[:2, 2]
-
-            for i, (mean, cov) in enumerate(zip(multi_mean, multi_covariance)):
-                mean = R10x10.dot(mean)
-                mean[:2] += t
-                cov = R10x10.dot(cov).dot(R10x10.transpose())
-
-                stracks[i].mean = mean
-                stracks[i].covariance = cov
-
     def activate(self, kalman_filter, frame_id):
         """Start a new tracklet"""
         self.kalman_filter = kalman_filter
         self.id = self.next_id()
 
         self.mean, self.covariance = self.kalman_filter.initiate(
-            measurement=self.xywh_with_depth
+            measurement=self.xywh_dc
         )
 
         self.tracklet_len = 0
@@ -220,7 +169,7 @@ class STrack(BaseTrack):
         self.mean, self.covariance = self.kalman_filter.update(
             mean=self.mean, 
             covariance=self.covariance, 
-            measurement=new_track.xywh_with_depth
+            measurement=new_track.xywh_dc
         )
         if new_track.curr_feat is not None:
             self.update_features(feat=new_track.curr_feat)
@@ -253,7 +202,7 @@ class STrack(BaseTrack):
         self.mean, self.covariance = self.kalman_filter.update(
             mean=self.mean, 
             covariance=self.covariance, 
-            measurement=new_track.xywh_with_depth
+            measurement=new_track.xywh_dc
         )
 
         if new_track.curr_feat is not None:
@@ -269,35 +218,18 @@ class STrack(BaseTrack):
             cls=new_track.cls, 
             score=new_track.score
         )
-
-    # NOTE: Following code was in the original BoT-SORT algorithm, 
-    # but we have replaced it with self.xyxy_with_depth() 
-    # in the BoT-SORT + RGBD algorithm.
-    # =========================================================
-    # @property
-    # def xyxy(self):
-    #     """Convert bounding box to format `(min x, min y, max x, max y)`, i.e.,
-    #     `(top left, bottom right)`.
-    #     """
-    #     if self.mean is None:
-    #         ret = self.xywh_with_depth.copy()  # (xc, yc, depth, w, h)
-    #     else:
-    #         ret = self.mean[:5].copy()  # kf (xc, yc, depth, w, h)
-    #     ret = xywh2xyxy_dc(ret)  # (xc, yc, depth, w, h) --> (x1, y1, x2, y2, depth)
-    #     return ret
-    # =========================================================
     
     # NOTE: Replace every call to self.xyxy() method with
-    # self.xyxy_with_depth() method.
+    # self.xyxy_dc() method.
     @property
-    def xyxy_with_depth(self):
+    def xyxy_dc(self):
         """
         Convert bounding box to format 
         `(min x, min y, max x, max y, depth)`, i.e.,
         `(top left coord, bottom right coord, centre depth)`.
         """
         if self.mean is None:
-            ret = self.xywh_with_depth.copy()  # (xc, yc, depth, w, h)
+            ret = self.xywh_dc.copy()  # (xc, yc, depth, w, h)
         else:
             ret = self.mean[:5].copy()  # kf (xc, yc, depth, w, h)
         ret = xywh2xyxy_dc(ret)  # (xc, yc, depth, w, h) --> (x1, y1, x2, y2, depth)
@@ -307,20 +239,13 @@ class STrack(BaseTrack):
 class BoTSORT_DC(object):
     def __init__(
         self,
-        model_weights,
-        device,
-        fp16,
         track_high_thresh: float = 0.5,
         track_low_thresh: float = 0.1,
         new_track_thresh: float = 0.6,
         track_buffer: int = 30,
         match_thresh: float = 0.8,
-        proximity_thresh: float = 0.5,
-        appearance_thresh: float = 0.25,
-        cmc_method: str = "sparseOptFlow",
         frame_rate=30,
-        fuse_first_associate: bool = False,
-        with_reid: bool = True,
+        fuse_first_associate: bool = False
     ):
         self.tracked_stracks = []  # type: list[STrack]
         self.lost_stracks = []  # type: list[STrack]
@@ -339,16 +264,8 @@ class BoTSORT_DC(object):
         self.kalman_filter = KalmanFilter()
 
         # ReID module
-        self.proximity_thresh = proximity_thresh
-        self.appearance_thresh = appearance_thresh
-
-        self.with_reid = with_reid
-        if self.with_reid:
-            self.model = ReIDDetectMultiBackend(
-                weights=model_weights, 
-                device=device, 
-                fp16=fp16
-            )
+        # self.proximity_thresh = proximity_thresh
+        # self.appearance_thresh = appearance_thresh
 
         self.cmc = SparseOptFlow()
         self.fuse_first_associate = fuse_first_associate
@@ -405,25 +322,12 @@ class BoTSORT_DC(object):
         first_mask = confs > self.track_high_thresh
         dets_first = dets[first_mask]
 
-        """Extract embeddings """
-        if self.with_reid:
-            features_high = self.model.get_features(
-                xyxys=dets_first[:, 0:4], 
-                img=img
-            )
-
         if len(dets) > 0:
             """Detections"""
-            if self.with_reid:
-                detections = [
-                    STrack(det, f) 
-                    for (det, f) in zip(dets_first, features_high)
-                ]
-            else:
-                detections = [
-                    STrack(det) 
-                    for (det) in np.array(dets_first)
-                ]
+            detections = [
+                STrack(det) 
+                for (det) in np.array(dets_first)
+            ]
         else:
             detections = []
         """
@@ -448,31 +352,21 @@ class BoTSORT_DC(object):
 
         # Fix camera motion.
         warp = self.cmc.apply(img, dets_first[:, :4])
-        STrack.multi_gmc_with_depth(strack_pool, warp)
-        STrack.multi_gmc_with_depth(unconfirmed, warp)
+        STrack.multi_gmc_dc(strack_pool, warp)
+        STrack.multi_gmc_dc(unconfirmed, warp)
 
         # Associate with high score detection boxes
         ious_dists = iou_distance_dc(
             atracks=strack_pool, 
             btracks=detections
         )
-        ious_dists_mask = ious_dists > self.proximity_thresh
         if self.fuse_first_associate:
           ious_dists = fuse_score_dc(
               cost_matrix=ious_dists, 
               detections=detections
             )
 
-        if self.with_reid:
-            emb_dists = embedding_distance_dc(
-                tracks=strack_pool, 
-                detections=detections
-            ) / 2.0
-            emb_dists[emb_dists > self.appearance_thresh] = 1.0
-            emb_dists[ious_dists_mask] = 1.0
-            dists = np.minimum(ious_dists, emb_dists)
-        else:
-            dists = ious_dists
+        dists = ious_dists
 
         matches, u_track, u_detection = linear_assignment_dc(
             dists, thresh=self.match_thresh
@@ -534,23 +428,13 @@ class BoTSORT_DC(object):
             atracks=unconfirmed, 
             btracks=detections
         )
-        ious_dists_mask = ious_dists > self.proximity_thresh
 
         ious_dists = fuse_score_dc(
             cost_matrix=ious_dists, 
             detections=detections
         )
         
-        if self.with_reid:
-            emb_dists = embedding_distance_dc(
-                tracks=unconfirmed, 
-                detections=detections
-            ) / 2.0
-            emb_dists[emb_dists > self.appearance_thresh] = 1.0
-            emb_dists[ious_dists_mask] = 1.0
-            dists = np.minimum(ious_dists, emb_dists)
-        else:
-            dists = ious_dists
+        dists = ious_dists
 
         matches, u_unconfirmed, \
             u_detection = linear_assignment_dc(
@@ -623,7 +507,7 @@ class BoTSORT_DC(object):
         outputs = []
         for t in output_stracks:
             output = []
-            output.extend(t.xyxy_with_depth)  # (x1, y1, x2, y2, depth)
+            output.extend(t.xyxy_dc)  # (x1, y1, x2, y2, depth)
             output.append(t.id)  # track ID
             output.append(t.score)  # confidence score
             output.append(t.cls)  # class ID

@@ -320,7 +320,6 @@ class KalmanBoxTracker(object):
 class OCSORT_D(object):
     def __init__(
         self,
-        per_class=True,
         det_thresh=0.2,
         max_age=30,
         min_hits=3,

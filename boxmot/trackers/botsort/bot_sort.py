@@ -184,20 +184,13 @@ class STrack(BaseTrack):
 class BoTSORT(object):
     def __init__(
         self,
-        model_weights,
-        device,
-        fp16,
         track_high_thresh: float = 0.5,
         track_low_thresh: float = 0.1,
         new_track_thresh: float = 0.6,
         track_buffer: int = 30,
         match_thresh: float = 0.8,
-        proximity_thresh: float = 0.5,
-        appearance_thresh: float = 0.25,
-        cmc_method: str = "sparseOptFlow",
         frame_rate=30,
-        fuse_first_associate: bool = False,
-        with_reid: bool = True,
+        fuse_first_associate: bool = False
     ):
         self.tracked_stracks = []  # type: list[STrack]
         self.lost_stracks = []  # type: list[STrack]
@@ -214,17 +207,7 @@ class BoTSORT(object):
         self.buffer_size = int(frame_rate / 30.0 * track_buffer)
         self.max_time_lost = self.buffer_size
         self.kalman_filter = KalmanFilter()
-
-        # ReID module
-        self.proximity_thresh = proximity_thresh
-        self.appearance_thresh = appearance_thresh
-
-        self.with_reid = with_reid
-        if self.with_reid:
-            self.model = ReIDDetectMultiBackend(
-                weights=model_weights, device=device, fp16=fp16
-            )
-
+        
         self.cmc = SparseOptFlow()
         self.fuse_first_associate = fuse_first_associate
 
@@ -261,16 +244,9 @@ class BoTSORT(object):
         first_mask = confs > self.track_high_thresh
         dets_first = dets[first_mask]
 
-        """Extract embeddings """
-        if self.with_reid:
-            features_high = self.model.get_features(dets_first[:, 0:4], img)
-
         if len(dets) > 0:
             """Detections"""
-            if self.with_reid:
-                detections = [STrack(det, f) for (det, f) in zip(dets_first, features_high)]
-            else:
-                detections = [STrack(det) for (det) in np.array(dets_first)]
+            detections = [STrack(det) for (det) in np.array(dets_first)]
         else:
             detections = []
 
@@ -300,13 +276,7 @@ class BoTSORT(object):
         if self.fuse_first_associate:
           ious_dists = fuse_score(ious_dists, detections)
 
-        if self.with_reid:
-            emb_dists = embedding_distance(strack_pool, detections) / 2.0
-            emb_dists[emb_dists > self.appearance_thresh] = 1.0
-            emb_dists[ious_dists_mask] = 1.0
-            dists = np.minimum(ious_dists, emb_dists)
-        else:
-            dists = ious_dists
+        dists = ious_dists
 
         matches, u_track, u_detection = linear_assignment(
             dists, thresh=self.match_thresh
@@ -355,17 +325,10 @@ class BoTSORT(object):
         """Deal with unconfirmed tracks, usually tracks with only one beginning frame"""
         detections = [detections[i] for i in u_detection]
         ious_dists = iou_distance(unconfirmed, detections)
-        ious_dists_mask = ious_dists > self.proximity_thresh
 
         ious_dists = fuse_score(ious_dists, detections)
         
-        if self.with_reid:
-            emb_dists = embedding_distance(unconfirmed, detections) / 2.0
-            emb_dists[emb_dists > self.appearance_thresh] = 1.0
-            emb_dists[ious_dists_mask] = 1.0
-            dists = np.minimum(ious_dists, emb_dists)
-        else:
-            dists = ious_dists
+        dists = ious_dists
 
         matches, u_unconfirmed, u_detection = linear_assignment(dists, thresh=0.7)
         for itracked, idet in matches:
