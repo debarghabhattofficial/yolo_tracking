@@ -18,9 +18,9 @@ def speed_direction_batch(dets, tracks):
 
 
 # NOTE: Replace every call to speed_direction_batch() by
-# speed_direction_batch_with_depth() in the 
+# speed_direction_batch_d() in the 
 # associate_with_depth() method definition.
-def speed_direction_batch_with_depth(dets, tracks):
+def speed_direction_batch_d(dets, tracks):
     tracks = tracks[..., np.newaxis]
     # Center coordinates of bbox1
     CX1 = (dets[:, 0] + dets[:, 2]) / 2.0
@@ -258,7 +258,7 @@ def associate_d(detections,
 
     # compute the speed and direction of the detections 
     # based on their previous observations.
-    X, Y, Z = speed_direction_batch_with_depth(detections, previous_obs)
+    X, Y, Z = speed_direction_batch_d(detections, previous_obs)
     
     # Extract the X, Y and Z components of velocities and 
     # repeat them to match the shape of the computed 
@@ -266,13 +266,25 @@ def associate_d(detections,
     inertia_X = velocities[:, 0]
     inertia_Y = velocities[:, 1]
     inertia_Z = velocities[:, 2]
-    inertia_X = np.repeat(inertia_X[:, np.newaxis], X.shape[1], axis=1)
-    inertia_Y = np.repeat(inertia_Y[:, np.newaxis], Y.shape[1], axis=1)
-    inertia_Z = np.repeat(inertia_Z[:, np.newaxis], Z.shape[1], axis=1)
+    inertia_X = np.repeat(
+        a=inertia_X[:, np.newaxis], 
+        repeats=X.shape[1], 
+        axis=1
+    )
+    inertia_Y = np.repeat(
+        a=inertia_Y[:, np.newaxis], 
+        repeats=Y.shape[1], 
+        axis=1
+    )
+    inertia_Z = np.repeat(
+        a=inertia_Z[:, np.newaxis], 
+        repeats=Z.shape[1], 
+        axis=1
+    )
     
     # Compute the cosine of the angle difference between 
     # velocities and directions
-    diff_angle_cos = inertia_X * X + inertia_Y * Y + inertia_Z * Z
+    diff_angle_cos = (inertia_X * X) + (inertia_Y * Y) + (inertia_Z * Z)
     # Clip it to the range [-1, 1]. 
     diff_angle_cos = np.clip(diff_angle_cos, a_min=-1, a_max=1)
     # Compute the angle in radians.
@@ -290,9 +302,17 @@ def associate_d(detections,
 
     iou_matrix = run_asso_func(asso_func, detections, trackers, w, h)
     #iou_matrix = iou_batch(detections, trackers)
-    scores = np.repeat(detections[:, -1][:, np.newaxis], trackers.shape[0], axis=1)
+    scores = np.repeat(
+        a=detections[:, -1][:, np.newaxis], 
+        repeats=trackers.shape[0], 
+        axis=1
+    )
     # iou_matrix = iou_matrix * scores # a trick sometiems works, we don't encourage this
-    valid_mask = np.repeat(valid_mask[:, np.newaxis], X.shape[1], axis=1)
+    valid_mask = np.repeat(
+        a=valid_mask[:, np.newaxis], 
+        repeats=X.shape[1], 
+        axis=1
+    )
 
     angle_diff_cost = (valid_mask * diff_angle) * vdc_weight
     angle_diff_cost = angle_diff_cost.T
@@ -406,7 +426,7 @@ def associate_dt(detections,
 
     # compute the speed and direction of the detections 
     # based on their previous observations.
-    X, Y, Z = speed_direction_batch_with_depth(detections, previous_obs)
+    X, Y, Z = speed_direction_batch_d(detections, previous_obs)
     
     # Extract the X, Y and Z components of velocities and 
     # repeat them to match the shape of the computed 
@@ -554,7 +574,7 @@ def associate_dtc(detections,
 
     # compute the speed and direction of the detections 
     # based on their previous observations.
-    X, Y, Z = speed_direction_batch_with_depth(detections, previous_obs)
+    X, Y, Z = speed_direction_batch_d(detections, previous_obs)
     
     # Extract the X, Y and Z components of velocities and 
     # repeat them to match the shape of the computed 
@@ -699,7 +719,7 @@ def associate_dtc_b(detections,
 
     # compute the speed and direction of the detections 
     # based on their previous observations.
-    X, Y, Z = speed_direction_batch_with_depth(detections, previous_obs)
+    X, Y, Z = speed_direction_batch_d(detections, previous_obs)
     
     # Extract the X, Y and Z components of velocities and 
     # repeat them to match the shape of the computed 
@@ -731,9 +751,17 @@ def associate_dtc_b(detections,
 
     iou_matrix = run_asso_func(asso_func, detections, trackers, w, h)
     #iou_matrix = iou_batch(detections, trackers)
-    scores = np.repeat(detections[:, -1][:, np.newaxis], trackers.shape[0], axis=1)
+    scores = np.repeat(
+        a=detections[:, -1][:, np.newaxis], 
+        repeats=trackers.shape[0], 
+        axis=1
+    )
     # iou_matrix = iou_matrix * scores # a trick sometiems works, we don't encourage this
-    valid_mask = np.repeat(valid_mask[:, np.newaxis], X.shape[1], axis=1)
+    valid_mask = np.repeat(
+        a=valid_mask[:, np.newaxis], 
+        repeats=X.shape[1], 
+        axis=1
+    )
 
     angle_diff_cost = (valid_mask * diff_angle) * vdc_weight
     angle_diff_cost = angle_diff_cost.T

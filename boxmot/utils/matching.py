@@ -108,9 +108,6 @@ def linear_assignment_dc(cost_matrix, thresh):
 # purpose while developing the BoT-SORT + RGBD algorithm. Remove if
 # not required.
 def linear_assignment_dtc(cost_matrix, thresh):
-    print(f"[L 111]: cost_matrix shape: {cost_matrix.shape}")  # DEB
-    print(f"[L 112]: cost_matrix: \n{cost_matrix}")  # DEB
-    print("-" * 75)  # DEB
     if cost_matrix.size == 0:
         return (
             np.empty((0, 2), dtype=int),
@@ -123,30 +120,12 @@ def linear_assignment_dtc(cost_matrix, thresh):
         extend_cost=True, 
         cost_limit=thresh
     )
-    print(f"[L 126]: cost type: {type(cost)}")  # DEB
-    print(f"[L 127]: cost: \n{cost}")  # DEB
-    print("-" * 75)  # DEB
-    print(f"[L 129]: x type: {type(x)}")  # DEB
-    print(f"[L 130]: x: \n{x}")  # DEB
-    print("-" * 75)  # DEB
-    print(f"[L 132]: y type: {type(y)}")  # DEB
-    print(f"[L 133]: y: \n{y}")  # DEB
-    print("-" * 75)  # DEB
     for ix, mx in enumerate(x):
         if mx >= 0:
             matches.append([ix, mx])
     unmatched_a = np.where(x < 0)[0]
     unmatched_b = np.where(y < 0)[0]
     matches = np.asarray(matches)
-    print(f"[L 132]: y type: {type(y)}")  # DEB
-    print(f"[L 133]: y: \n{y}")  # DEB
-    print("-" * 75)  # DEB
-    print(f"[L 132]: y type: {type(y)}")  # DEB
-    print(f"[L 133]: y: \n{y}")  # DEB
-    print("-" * 75)  # DEB
-    print(f"[L 132]: y type: {type(y)}")  # DEB
-    print(f"[L 133]: y: \n{y}")  # DEB
-    print("-" * 75)  # DEB
     return matches, unmatched_a, unmatched_b
 
 
@@ -255,30 +234,17 @@ def iou_distance_dtc(atracks, btracks):
 
     :rtype cost_matrix np.ndarray
     """
-    # print(f"atracks shape: {atracks.shape}")  # DEB
-    print(f"atracks: \n{atracks}")  # DEB
-    print("-" * 75)  # DEB
-    # print(f"btracks shape: {btracks.shape}")  # DEB
-    print(f"btracks: \n{btracks}")  # DEB
-    print("-" * 75)  # DEB
-
     if (len(atracks) > 0 and isinstance(atracks[0], np.ndarray)) or (
         len(btracks) > 0 and isinstance(btracks[0], np.ndarray)
     ):
         # Get bbox top left and bottom right coordinates
         # for atracks.
         atlbrs = atracks[:, :4]
-        print(f"atlbrs shape: {atlbrs.shape}")  # DEB
-        print(f"atlbrs: \n{atlbrs}")  # DEB
-        print("-" * 75)  # DEB
         err_msg = f"Unsupported 'atlbrs' 2nd dimension length '{atlbrs.shape[1]}', valid lenghts is 4."
         assert(atlbrs.shape[1] == 4), err_msg
         # Get bbox top left and bottom right coordinates
         # for btracks.
         btlbrs = btracks[:, :4]
-        print(f"btlbrs shape: {btlbrs.shape}")  # DEB
-        print(f"btlbrs: \n{btlbrs}")  # DEB
-        print("-" * 75)  # DEB
         err_msg = f"Unsupported 'btlbrs' 2nd dimension length '{btlbrs.shape[1]}', valid lenghts is 4."
         assert(btlbrs.shape[1] == 4), err_msg
     else:
@@ -286,16 +252,10 @@ def iou_distance_dtc(atracks, btracks):
             track.xyxy_dtc[:4] 
             for track in atracks
         ]
-        # print(f"atlbrs shape: {atlbrs.shape}")  # DEB
-        print(f"atlbrs: \n{atlbrs}")  # DEB
-        print("-" * 75)  # DEB
         btlbrs = [
             track.xyxy_dtc[:4] 
             for track in btracks
         ]
-        # print(f"btlbrs shape: {btlbrs.shape}")  # DEB
-        print(f"btlbrs: \n{btlbrs}")  # DEB
-        print("-" * 75)  # DEB
 
     ious = np.zeros(
         shape=(len(atlbrs), len(btlbrs)), 
@@ -304,14 +264,8 @@ def iou_distance_dtc(atracks, btracks):
     if ious.size == 0:
         return ious
     _ious = iou_batch(atlbrs, btlbrs)
-    print(f"_ious shape: {_ious.shape}")  # DEB
-    print(f"_ious: \n{_ious}")  # DEB
-    print("-" * 75)  # DEB
 
     cost_matrix = 1 - _ious
-    print(f"cost_matrix shape: {cost_matrix.shape}")  # DEB
-    print(f"cost_matrix: \n{cost_matrix}")  # DEB
-    print("-" * 75)  # DEB
 
     return cost_matrix
 
