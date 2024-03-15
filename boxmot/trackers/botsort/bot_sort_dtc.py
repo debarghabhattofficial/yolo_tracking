@@ -9,7 +9,6 @@ from boxmot.motion.cmc.sof import SparseOptFlow
 from boxmot.motion.kalman_filters.botsort_dtc_kf import KalmanFilter
 from boxmot.trackers.botsort.basetrack import BaseTrack, TrackState
 from boxmot.utils.matching import (
-    embedding_distance_dtc, 
     fuse_score_dtc, 
     iou_distance_dtc, 
     linear_assignment_dtc

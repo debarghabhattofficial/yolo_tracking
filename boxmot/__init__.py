@@ -16,10 +16,12 @@ from boxmot.trackers.strongsort.strong_sort import StrongSORT
 # depth information from the RGBD camera for tracking.
 # Added by Debargha Bhattacharjee for the Shadow Mode project.
 # =================================================================================
+from boxmot.trackers.ocsort.ocsort_tc import OCSORT_TC as OCSORT_TC
 from boxmot.trackers.ocsort.ocsort_d import OCSORT_D as OCSORT_D
 from boxmot.trackers.ocsort.ocsort_dt import OCSORT_DT as OCSORT_DT
 from boxmot.trackers.ocsort.ocsort_dtc import OCSORT_DTC as OCSORT_DTC
 from boxmot.trackers.ocsort.ocsort_dtc_b import OCSORT_DTC_B as OCSORT_DTC_B
+from boxmot.trackers.botsort.bot_sort_tc import BoTSORT_TC as BoTSORT_TC
 from boxmot.trackers.botsort.bot_sort_dc import BoTSORT_DC as BoTSORT_DC
 from boxmot.trackers.botsort.bot_sort_dtc import BoTSORT_DTC as BoTSORT_DTC
 # =================================================================================
@@ -27,10 +29,12 @@ from boxmot.trackers.botsort.bot_sort_dtc import BoTSORT_DTC as BoTSORT_DTC
 TRACKERS = [
     "bytetrack", 
     "botsort",
+    "botsort_tc",
     "botsort_dc",
     "botsort_dtc",
     "strongsort", 
     "ocsort", 
+    "ocsort_tc",
     "ocsort_d",
     "ocsort_dt",
     "ocsort_dtc",
@@ -43,12 +47,14 @@ __all__ = (
     "__version__",
     "StrongSORT", 
     "OCSORT", 
+    "OCSORT_TC", 
     "OCSORT_D",
     "OCSORT_DT",
     "OCSORT_DTC",
     "OCSORT_DTC_B",
     "BYTETracker", 
     "BoTSORT", 
+    "BoTSORT_TC",
     "BoTSORT_DC",
     "BoTSORT_DTC",
     "DeepOCSORT", 

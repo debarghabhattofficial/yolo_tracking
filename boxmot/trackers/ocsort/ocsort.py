@@ -45,20 +45,35 @@ def convert_x_to_bbox(x, score=None):
     w = np.sqrt(x[2] * x[3])
     h = x[2] / w
     if score is None:
-        return np.array(
-            [x[0] - w / 2.0, x[1] - h / 2.0, x[0] + w / 2.0, x[1] + h / 2.0]
-        ).reshape((1, 4))
+        return np.array([
+            x[0] - w / 2.0, 
+            x[1] - h / 2.0, 
+            x[0] + w / 2.0, 
+            x[1] + h / 2.0
+        ]).reshape((1, 4))
     else:
-        return np.array(
-            [x[0] - w / 2.0, x[1] - h / 2.0, x[0] + w / 2.0, x[1] + h / 2.0, score]
-        ).reshape((1, 5))
+        return np.array([
+            x[0] - w / 2.0, 
+            x[1] - h / 2.0, 
+            x[0] + w / 2.0, 
+            x[1] + h / 2.0, 
+            score
+        ]).reshape((1, 5))
 
 
 def speed_direction(bbox1, bbox2):
-    cx1, cy1 = (bbox1[0] + bbox1[2]) / 2.0, (bbox1[1] + bbox1[3]) / 2.0
-    cx2, cy2 = (bbox2[0] + bbox2[2]) / 2.0, (bbox2[1] + bbox2[3]) / 2.0
+    # Center oordinates for bbox1 centre
+    cx1 = (bbox1[0] + bbox1[2]) / 2.0
+    cy1 = (bbox1[1] + bbox1[3]) / 2.0
+
+    # Center coordinates for bbox2 centre
+    cx2 = (bbox2[0] + bbox2[2]) / 2.0
+    cy2 = (bbox2[1] + bbox2[3]) / 2.0
+
     speed = np.array([cy2 - cy1, cx2 - cx1])
-    norm = np.sqrt((cy2 - cy1) ** 2 + (cx2 - cx1) ** 2) + 1e-6
+    norm = np.sqrt(
+        ((cy2 - cy1) ** 2) + ((cx2 - cx1) ** 2)
+    ) + 1e-6
     return speed / norm
 
 
@@ -77,38 +92,50 @@ class KalmanBoxTracker(object):
         # define constant velocity model
         self.det_ind = det_ind
         self.kf = KalmanFilter(dim_x=7, dim_z=4)
+        
+        # State transition matrix F
         self.kf.F = np.array(
             [
-                [1, 0, 0, 0, 1, 0, 0],
-                [0, 1, 0, 0, 0, 1, 0],
-                [0, 0, 1, 0, 0, 0, 1],
-                [0, 0, 0, 1, 0, 0, 0],
-                [0, 0, 0, 0, 1, 0, 0],
-                [0, 0, 0, 0, 0, 1, 0],
-                [0, 0, 0, 0, 0, 0, 1],
-            ]
-        )
-        self.kf.H = np.array(
-            [
-                [1, 0, 0, 0, 0, 0, 0],
-                [0, 1, 0, 0, 0, 0, 0],
-                [0, 0, 1, 0, 0, 0, 0],
-                [0, 0, 0, 1, 0, 0, 0],
+                [1, 0, 0, 0, 1, 0, 0],  # centre u
+                [0, 1, 0, 0, 0, 1, 0],  # centre v
+                [0, 0, 1, 0, 0, 0, 1],  # scale/area s
+                [0, 0, 0, 1, 0, 0, 0],  # aspect ratio a
+                [0, 0, 0, 0, 1, 0, 0],  # velocity centre u
+                [0, 0, 0, 0, 0, 1, 0],  # velocity centre v
+                [0, 0, 0, 0, 0, 0, 1],  # velocity scale/area s
             ]
         )
 
+        # Measurement matrix H
+        self.kf.H = np.array(
+            [
+                [1, 0, 0, 0, 0, 0, 0],  # centre u
+                [0, 1, 0, 0, 0, 0, 0],  # centre v
+                [0, 0, 1, 0, 0, 0, 0],  # scale/area s
+                [0, 0, 0, 1, 0, 0, 0],  # aspect ratio a
+            ]
+        )
+
+        # Measurement noise covariance R
         self.kf.R[2:, 2:] *= 10.0
+
+        # State covariance P
         self.kf.P[
             4:, 4:
         ] *= 1000.0  # give high uncertainty to the unobservable initial velocities
         self.kf.P *= 10.0
+
+        # Process noise covariance Q
         self.kf.Q[-1, -1] *= 0.01
         self.kf.Q[4:, 4:] *= 0.01
 
+        # Initial state [u, v, s, a, du, dv, ds]
         self.kf.x[:4] = convert_bbox_to_z(bbox)
+
         self.time_since_update = 0
         self.id = KalmanBoxTracker.count
         KalmanBoxTracker.count += 1
+
         self.history = []
         self.hits = 0
         self.hit_streak = 0
@@ -116,7 +143,7 @@ class KalmanBoxTracker(object):
         self.conf = bbox[-1]
         self.cls = cls
         """
-        NOTE: [-1,-1,-1,-1,-1] is a compromising placeholder for non-observation status, the same for the return of
+        NOTE: [-1, -1, -1, -1, -1] is a compromising placeholder for non-observation status, the same for the return of
         function k_previous_obs. It is ugly and I do not like it. But to support generate observation array in a
         fast and unified way, which you would see below k_observations = np.array([k_previous_obs(...]]),
         let's bear it for now.
@@ -287,10 +314,22 @@ class OCSort(object):
             First round of association
         """
         matched, unmatched_dets, unmatched_trks = associate(
-            dets[:, 0:5], trks, self.asso_func, self.asso_threshold, velocities, k_observations, self.inertia, w, h
+            detections=dets[:, 0:5], 
+            trackers=trks, 
+            asso_func=self.asso_func, 
+            iou_threshold=self.asso_threshold, 
+            velocities=velocities, 
+            previous_obs=k_observations, 
+            vdc_weight=self.inertia, 
+            w=w, 
+            h=h
         )
         for m in matched:
-            self.trackers[m[1]].update(dets[m[0], :5], dets[m[0], 5], dets[m[0], 6])
+            self.trackers[m[1]].update(
+                bbox=dets[m[0], :5], 
+                cls=dets[m[0], 5], 
+                det_ind=dets[m[0], 6]
+            )
 
         """
             Second round of associaton by OCR
@@ -315,7 +354,9 @@ class OCSort(object):
                     if iou_left[m[0], m[1]] < self.asso_threshold:
                         continue
                     self.trackers[trk_ind].update(
-                        dets_second[det_ind, :5], dets_second[det_ind, 5], dets_second[det_ind, 6]
+                        bbox=dets_second[det_ind, :5], 
+                        cls=dets_second[det_ind, 5], 
+                        det_ind=dets_second[det_ind, 6]
                     )
                     to_remove_trk_indices.append(trk_ind)
                 unmatched_trks = np.setdiff1d(
@@ -340,22 +381,37 @@ class OCSort(object):
                     det_ind, trk_ind = unmatched_dets[m[0]], unmatched_trks[m[1]]
                     if iou_left[m[0], m[1]] < self.asso_threshold:
                         continue
-                    self.trackers[trk_ind].update(dets[det_ind, :5], dets[det_ind, 5], dets[det_ind, 6])
+                    self.trackers[trk_ind].update(
+                        bbox=dets[det_ind, :5], 
+                        cls=dets[det_ind, 5], 
+                        det_ind=dets[det_ind, 6]
+                    )
                     to_remove_det_indices.append(det_ind)
                     to_remove_trk_indices.append(trk_ind)
                 unmatched_dets = np.setdiff1d(
-                    unmatched_dets, np.array(to_remove_det_indices)
+                    unmatched_dets, 
+                    np.array(to_remove_det_indices)
                 )
                 unmatched_trks = np.setdiff1d(
-                    unmatched_trks, np.array(to_remove_trk_indices)
+                    unmatched_trks, 
+                    np.array(to_remove_trk_indices)
                 )
 
         for m in unmatched_trks:
-            self.trackers[m].update(None, None, None)
+            self.trackers[m].update(
+                bbox=None, 
+                cls=None, 
+                det_ind=None
+            )
 
         # create and initialise new trackers for unmatched detections
         for i in unmatched_dets:
-            trk = KalmanBoxTracker(dets[i, :5], dets[i, 5], dets[i, 6], delta_t=self.delta_t)
+            trk = KalmanBoxTracker(
+                bbox=dets[i, :5], 
+                cls=dets[i, 5], 
+                det_ind=dets[i, 6], 
+                delta_t=self.delta_t
+            )
             self.trackers.append(trk)
         i = len(self.trackers)
         for trk in reversed(self.trackers):
@@ -363,7 +419,8 @@ class OCSort(object):
                 d = trk.get_state()[0]
             else:
                 """
-                this is optional to use the recent observation or the kalman filter prediction,
+                this is optional to use the recent observation or 
+                the kalman filter prediction.
                 we didn't notice significant difference here
                 """
                 d = trk.last_observation[:4]
@@ -372,9 +429,13 @@ class OCSort(object):
             ):
                 # +1 as MOT benchmark requires positive
                 ret.append(
-                    np.concatenate((d, [trk.id + 1], [trk.conf], [trk.cls], [trk.det_ind])).reshape(
-                        1, -1
-                    )
+                    np.concatenate((
+                        d, 
+                        [trk.id + 1], 
+                        [trk.conf], 
+                        [trk.cls], 
+                        [trk.det_ind]
+                    )).reshape(1, -1)
                 )
             i -= 1
             # remove dead tracklet

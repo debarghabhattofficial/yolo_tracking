@@ -558,7 +558,7 @@ def associate_dtc(detections,
                   aw_off=None,
                   aw_param=None):
     if len(trackers) == 0:
-        # NOTE: np.empty((0, 6)) changed to np.empty((0, 5)) 
+        # NOTE: np.empty((0, 5)) changed to np.empty((0, 6)) 
         # to include bbox centre depth at index 4.
         # Therefore, current structure of detections 
         # is [u1, v1, u2, v2, depth, score]
@@ -603,6 +603,150 @@ def associate_dtc(detections,
     # to account for depth values at index 4, which shifts
     # the confidence score to index 5.
     valid_mask[np.where(previous_obs[:, 5] < 0)] = 0
+
+    iou_matrix = run_asso_func(asso_func, detections, trackers, w, h)
+    #iou_matrix = iou_batch(detections, trackers)
+    scores = np.repeat(detections[:, -1][:, np.newaxis], trackers.shape[0], axis=1)
+    # iou_matrix = iou_matrix * scores # a trick sometiems works, we don't encourage this
+    valid_mask = np.repeat(valid_mask[:, np.newaxis], X.shape[1], axis=1)
+
+    angle_diff_cost = (valid_mask * diff_angle) * vdc_weight
+    angle_diff_cost = angle_diff_cost.T
+    angle_diff_cost = angle_diff_cost * scores
+
+    if min(iou_matrix.shape):
+        # Create a binary matrix a indicating whether the
+        # IOU is above the threshold.
+        a = (iou_matrix > iou_threshold).astype(np.int32)
+        if a.sum(1).max() == 1 and a.sum(0).max() == 1:
+            # If each detection matches at most one tracker 
+            # and each tracker matches at most one detection, 
+            # directly stack the indices of matching pairs.
+            matched_indices = np.stack(np.where(a), axis=1)
+        else:
+            # Handle the case when embedding cost is 
+            # provided. If aw_off is False, apply 
+            # additional processing using the 
+            # compute_aw_max_metric function.
+            if emb_cost is None:
+                emb_cost = 0
+            else:
+                emb_cost = emb_cost
+                emb_cost[iou_matrix <= 0] = 0
+                if not aw_off:
+                    emb_cost = compute_aw_max_metric(
+                        emb_cost=emb_cost, 
+                        w_association_emb=w_assoc_emb, 
+                        bottom=aw_param
+                    )
+                else:
+                    emb_cost *= w_assoc_emb
+            # Compute the final cost by combining IOU, angle 
+            # difference, and embedding cost. 
+            final_cost = -(iou_matrix + angle_diff_cost + emb_cost)
+            # Use the Hungarian algorithm to find the optimal 
+            # assignment of detections to trackers based on the 
+            # total cost.
+            matched_indices = linear_assignment(final_cost)
+            if matched_indices.size == 0:
+                matched_indices = np.empty(shape=(0, 2))
+
+    else:
+        matched_indices = np.empty(shape=(0, 2))
+
+    # Identify unmatched detections based on the 
+    # matched indices.
+    unmatched_detections = []
+    for d, det in enumerate(detections):
+        if d not in matched_indices[:, 0]:
+            unmatched_detections.append(d)
+
+    # Identify unmatched trackers based on the 
+    # matched indices.
+    unmatched_trackers = []
+    for t, trk in enumerate(trackers):
+        if t not in matched_indices[:, 1]:
+            unmatched_trackers.append(t)
+
+    # Filter out matches with low IOU and update 
+    # lists of unmatched detections and trackers 
+    # accordingly.
+    matches = []
+    for m in matched_indices:
+        if iou_matrix[m[0], m[1]] < iou_threshold:
+            unmatched_detections.append(m[0])
+            unmatched_trackers.append(m[1])
+        else:
+            matches.append(m.reshape(1, 2))
+    if len(matches) == 0:
+        # If there are no matches, set matches to an 
+        # empty array.
+        matches = np.empty((0, 2), dtype=int)
+    else:
+        # Otherwise, concatenate the matches.
+        matches = np.concatenate(matches, axis=0)
+
+    return matches, np.array(unmatched_detections), np.array(unmatched_trackers)
+
+
+# NOTE: This function is not used in the current implementation.
+# Replace every call to associate() by associate_with_depth() in the
+# the tracking algorithms (currently working with OC-SORT).
+def associate_tc(detections,
+                 trackers,
+                 asso_func,
+                 iou_threshold,
+                 velocities,
+                 previous_obs,
+                 vdc_weight,
+                 w,
+                 h,
+                 emb_cost=None,
+                 w_assoc_emb=None,
+                 aw_off=None,
+                 aw_param=None):
+    if len(trackers) == 0:
+        # NOTE: Current structure of detections 
+        # is [u1, v1, u2, v2, depth, score]. 
+        # Hence, using np.empty((0, 5)).
+        #
+        # If there are no trackers (len(trackers) == 0), 
+        # the function returns empty arrays for matches, 
+        # unmatched detections, and unmatched trackers.
+        return (
+            np.empty((0, 2), dtype=int),
+            np.arange(len(detections)),
+            np.empty((0, 5), dtype=int),
+        )
+
+    # compute the speed and direction of the detections 
+    # based on their previous observations.
+    X, Y = speed_direction_batch(detections, previous_obs)
+    
+    # Extract the X, Y and Z components of velocities and 
+    # repeat them to match the shape of the computed 
+    # directions (X, Y and Z).
+    inertia_X = velocities[:, 0]
+    inertia_Y = velocities[:, 1]
+    inertia_X = np.repeat(inertia_X[:, np.newaxis], X.shape[1], axis=1)
+    inertia_Y = np.repeat(inertia_Y[:, np.newaxis], Y.shape[1], axis=1)
+    
+    # Compute the cosine of the angle difference between 
+    # velocities and directions
+    diff_angle_cos = inertia_X * X + inertia_Y * Y
+    # Clip it to the range [-1, 1]. 
+    diff_angle_cos = np.clip(diff_angle_cos, a_min=-1, a_max=1)
+    # Compute the angle in radians.
+    diff_angle = np.arccos(diff_angle_cos)
+    # Normalize the angle difference to a value between 
+    # 0 and 1.
+    diff_angle = (np.pi / 2.0 - np.abs(diff_angle)) / np.pi
+
+    valid_mask = np.ones(previous_obs.shape[0])
+    # np.where condition remains the same as previous
+    # (previous_obs[:, 4] < 0) which tracks the confidence 
+    # score to index 4.
+    valid_mask[np.where(previous_obs[:, 4] < 0)] = 0
 
     iou_matrix = run_asso_func(asso_func, detections, trackers, w, h)
     #iou_matrix = iou_batch(detections, trackers)

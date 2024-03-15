@@ -78,38 +78,11 @@ class KalmanFilter(object):
         # the model. This is a bit hacky.
         self._std_weight_position = 1. / 20
         self._std_weight_velocity = 1. / 160
-
-        # self.std_factor_acc = 0.60
-        # self.std_offset_acc = 50.00
-        # self.std_factor_det = [0.80, 0.80]
-        # self.std_factor_klt = [0.14, 0.14]
-        # self.std_factor = [0.80, 0.80]
-        # self.min_std_det = [4.0, 4.0]
-        # self.min_std_klt = [5.0, 5.0]
-        # self.min_std = [4.0, 4.0]
-        # self.init_pos_weight = 5
-        # self.init_vel_weight = 12
-        # self.vel_coupling = 0.6
-        # self.vel_half_life = 2
         
         # Uncertainty in depth measurement. This is a hack which
         # makes the depth measurement uncertainty constant irrespective
         # of the current measurement.
         self._std_centre_depth = 0.01 ** (1/2)  # 0.01 ** (1/2)  # Here, we assume variance is 1.0.
-
-    def _init_mat(self, dt):
-        # acceleration-based process noise
-        acc_cov = np.diag([0.25 * dt**4] * 4 + [dt**2] * 4)
-        acc_cov[4:, :4] = np.eye(4) * (0.5 * dt**3)
-        acc_cov[:4, 4:] = np.eye(4) * (0.5 * dt**3)
-
-        update_mat = np.eye(5, 10)
-        motion_mat = np.eye(10)
-        for i in range(4):
-            motion_mat[i, i + 4] = self.vel_coupling * dt
-            motion_mat [i, (i + 2) % 4 + 4] = (1. - self.vel_coupling) * dt
-            motion_mat [i + 4, i + 4] = 0.5**(dt / self.vel_half_life)
-        return acc_cov, update_mat, motion_mat 
 
     def initiate(self, measurement):
         """Create track from unassociated measurement.

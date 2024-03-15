@@ -45,24 +45,6 @@ def k_previous_obs(observations, cur_age, k):
 
 
 # @nb.njit(fastmath=True, cache=True)
-# @nb.njit(cache=True)
-def convert_bbox_to_z(bbox):
-    """
-    Takes a bounding box in the form [x1, y1, x2, y2] and 
-    returns z in the form [x, y, s, r] where (x, y) is the 
-    centre of the box and s is the scale/area and r is the 
-    aspect ratio
-    """
-    w = bbox[2] - bbox[0]  # width
-    h = bbox[3] - bbox[1]  # height
-    x = bbox[0] + w / 2.0  # x coordinate of the centre
-    y = bbox[1] + h / 2.0  # y coordinate of the centre
-    s = w * h  # scale is just area
-    r = w / float(h + 1e-6)  # aspect ratio
-    return np.array([x, y, s, r]).reshape((4, 1))
-
-
-# @nb.njit(fastmath=True, cache=True)
 def convert_bbox_to_z_dtc(bbox):
     """
     Takes a bounding box in the form 
@@ -79,13 +61,14 @@ def convert_bbox_to_z_dtc(bbox):
     z = np.array([u1, v1, u2, v2, d]).reshape((5, 1))
     return z
 
+
 # @nb.njit(fastmath=True, cache=True)
 def convert_x_to_bbox_dtc(x, score=None):
     """
-    Takes a bounding box in the centre form 
+    Takes a bounding box in the tlbr form 
     [u1, v1, u2, v2, d] 
     and returns it in the form [u1, v1, u2, v2, d] where 
-    (u1, v1) is the top left and (u2, v 2) is the bottom 
+    (u1, v1) is the top left and (u2, v2) is the bottom 
     right.
     """
     if score is None:
@@ -105,15 +88,6 @@ def convert_x_to_bbox_dtc(x, score=None):
             x[4],
             score
         ]).reshape((1, 6))
-
-
-# @nb.njit(fastmath=True, cache=True)
-def speed_direction(bbox1, bbox2):
-    cx1, cy1 = (bbox1[0] + bbox1[2]) / 2.0, (bbox1[1] + bbox1[3]) / 2.0
-    cx2, cy2 = (bbox2[0] + bbox2[2]) / 2.0, (bbox2[1] + bbox2[3]) / 2.0
-    speed = np.array([cy2 - cy1, cx2 - cx1])
-    norm = np.sqrt((cy2 - cy1) ** 2 + (cx2 - cx1) ** 2) + 1e-6
-    return speed / norm
 
 
 # NOTE: Replace every call to speed_direction() method
@@ -527,7 +501,7 @@ class OCSORT_DTC(object):
                  inertia=0.2,
                  use_byte=False):
         """
-        Sets key parameters for SORT
+        Sets key parameters for SORT.
         """
         self.max_age = max_age
         self.min_hits = min_hits
@@ -552,7 +526,7 @@ class OCSORT_DTC(object):
                 ...
             ]
         Requires: this method must be called once for each 
-        frame even with empty detections (use np.empty((0, 5)) 
+        frame even with empty detections (use np.empty((0, 6)) 
         for frames without detections).
         Returns the a similar array, where the last column 
         is the object ID.

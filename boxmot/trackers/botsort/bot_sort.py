@@ -272,7 +272,6 @@ class BoTSORT(object):
 
         # Associate with high score detection boxes
         ious_dists = iou_distance(strack_pool, detections)
-        ious_dists_mask = ious_dists > self.proximity_thresh
         if self.fuse_first_associate:
           ious_dists = fuse_score(ious_dists, detections)
 
@@ -305,7 +304,9 @@ class BoTSORT(object):
             if strack_pool[i].state == TrackState.Tracked
         ]
         dists = iou_distance(r_tracked_stracks, detections_second)
-        matches, u_track, u_detection_second = linear_assignment(dists, thresh=0.5)
+        matches, u_track, u_detection_second = linear_assignment(
+            cost_matrix=dists, thresh=0.5
+        )
         for itracked, idet in matches:
             track = r_tracked_stracks[itracked]
             det = detections_second[idet]
@@ -330,7 +331,9 @@ class BoTSORT(object):
         
         dists = ious_dists
 
-        matches, u_unconfirmed, u_detection = linear_assignment(dists, thresh=0.7)
+        matches, u_unconfirmed, u_detection = linear_assignment(
+            cost_matrix=dists, thresh=0.7
+        )
         for itracked, idet in matches:
             unconfirmed[itracked].update(detections[idet], self.frame_id)
             activated_starcks.append(unconfirmed[itracked])
