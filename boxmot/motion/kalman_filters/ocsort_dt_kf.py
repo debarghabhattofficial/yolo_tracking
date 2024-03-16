@@ -105,7 +105,7 @@ import numpy.linalg as linalg
 from filterpy.stats import logpdf
 from filterpy.common import pretty_str, reshape_z
 
-import numba as nb
+# import numba as nb
 
 
 # Following code is added by DEB to make
