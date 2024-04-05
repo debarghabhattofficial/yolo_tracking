@@ -12,10 +12,6 @@
 """
     This script is adopted from the SORT script by Alex Bewley alex@bewley.ai
 """
-import logging
-logging.basicConfig(level=logging.INFO)
-LOGGER = logging.getLogger(__name__)
-
 import numpy as np
 
 from boxmot.motion.kalman_filters.ocsort_d_kf import KalmanFilter

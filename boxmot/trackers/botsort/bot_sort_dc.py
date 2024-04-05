@@ -262,11 +262,7 @@ class BoTSORT_DC(object):
         self.buffer_size = int(frame_rate / 30.0 * track_buffer)
         self.max_time_lost = self.buffer_size
         self.kalman_filter = KalmanFilter()
-
-        # ReID module
-        # self.proximity_thresh = proximity_thresh
-        # self.appearance_thresh = appearance_thresh
-
+        
         self.cmc = SparseOptFlow()
         self.fuse_first_associate = fuse_first_associate
 

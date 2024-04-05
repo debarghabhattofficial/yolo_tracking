@@ -348,6 +348,9 @@ class OCSort(object):
                 uniform here for simplicity
                 """
                 matched_indices = linear_assignment(-iou_left)
+                print(f"matched_indices shape: {matched_indices.shape}")
+                print(f"matched_indices: \n{matched_indices}")
+                print("-" * 75)
                 to_remove_trk_indices = []
                 for m in matched_indices:
                     det_ind, trk_ind = m[0], unmatched_trks[m[1]]
@@ -375,6 +378,9 @@ class OCSort(object):
                 uniform here for simplicity
                 """
                 rematched_indices = linear_assignment(-iou_left)
+                print(f"rematched_indices shape: {rematched_indices.shape}")
+                print(f"rematched_indices: \n{rematched_indices}")
+                print("-" * 75)
                 to_remove_det_indices = []
                 to_remove_trk_indices = []
                 for m in rematched_indices:
