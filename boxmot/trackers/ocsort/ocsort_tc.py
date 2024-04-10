@@ -30,6 +30,7 @@ from boxmot.motion.cmc.sof import SparseOptFlow
 # for debugging purposes.
 # =======================================================
 import cv2
+from boxmot.utils.iou import iou_batch, centroid_batch
 # =======================================================
 
 
@@ -593,6 +594,23 @@ class OCSORT_TC(object):
             w=w, 
             h=h
         )
+        avg_iou = np.around(
+            np.mean(np.diag(iou_batch(
+                bboxes1=dets[matched[:, 0], :4],
+                bboxes2=trks[matched[:, 1], :4]
+            ))), 4
+        )  # DEB
+        avg_centroid_dist = np.around(
+            np.mean(np.diag(centroid_batch(
+                bboxes1=dets[matched[:, 0], :4],
+                bboxes2=trks[matched[:, 1], :4],
+                w=w, h=h
+            ))), 4
+        )  # DEB
+        print("ASSOCIATION ROUND 1")  # DEB
+        print(f"AVG IOU: {avg_iou}")  # DEB
+        print(f"AVG CENTROID DIST: {avg_centroid_dist}")  # DEB
+        print("-" * 75)  # DEB
         for m in matched:
             self.trackers[m[1]].update(
                 bbox=dets[m[0], :5], 
@@ -605,7 +623,7 @@ class OCSORT_TC(object):
         (Observation-Centric Re-update)
         """
         # BYTE association
-        if self.use_byte and len(dets_second) > 0 and unmatched_trks.shape[0] > 0:
+        if self.use_byte and (len(dets_second) > 0) and (unmatched_trks.shape[0] > 0):
             u_trks = trks[unmatched_trks]
             iou_left = self.asso_func(
                 dets_second, u_trks
@@ -618,6 +636,23 @@ class OCSORT_TC(object):
                 uniform here for simplicity
                 """
                 matched_indices = linear_assignment(-iou_left)
+                avg_iou = np.around(
+                    np.mean(np.diag(iou_batch(
+                        bboxes1=dets_second[matched_indices[:, 0], :4],
+                        bboxes2=u_trks[matched_indices[:, 1], :4]
+                    ))), 4
+                )  # DEB
+                avg_centroid_dist = np.around(
+                    np.mean(np.diag(centroid_batch(
+                        bboxes1=dets_second[matched_indices[:, 0], :4],
+                        bboxes2=u_trks[matched_indices[:, 1], :4],
+                        w=w, h=h
+                    ))), 4
+                )  # DEB
+                print("ASSOCIATION ROUND 2")  # DEB
+                print(f"AVG IOU: {avg_iou}")  # DEB
+                print(f"AVG CENTROID DIST: {avg_centroid_dist}")  # DEB
+                print("-" * 75)  # DEB
                 to_remove_trk_indices = []
                 for m in matched_indices:
                     det_ind, trk_ind = m[0], unmatched_trks[m[1]]
@@ -633,7 +668,7 @@ class OCSORT_TC(object):
                     unmatched_trks, np.array(to_remove_trk_indices)
                 )
 
-        if unmatched_dets.shape[0] > 0 and unmatched_trks.shape[0] > 0:
+        if (unmatched_dets.shape[0] > 0) and (unmatched_trks.shape[0] > 0):
             left_dets = dets[unmatched_dets]
             left_trks = last_boxes[unmatched_trks]
             iou_left = run_asso_func(self.asso_func, left_dets, left_trks, w, h)
@@ -645,6 +680,23 @@ class OCSORT_TC(object):
                 uniform here for simplicity
                 """
                 rematched_indices = linear_assignment(-iou_left)
+                avg_iou = np.around(
+                    np.mean(np.diag(iou_batch(
+                        bboxes1=dets[unmatched_dets[rematched_indices[:, 0]], :4],
+                        bboxes2=last_boxes[unmatched_trks[rematched_indices[:, 1]], :4]
+                    ))), 4
+                )  # DEB
+                avg_centroid_dist = np.around(
+                    np.mean(np.diag(centroid_batch(
+                        bboxes1=dets[unmatched_dets[rematched_indices[:, 0]], :4],
+                        bboxes2=last_boxes[unmatched_trks[rematched_indices[:, 1]], :4],
+                        w=w, h=h
+                    ))), 4
+                )  # DEB
+                print("UNMATCHED DETECTIONS")  # DEB
+                print(f"AVG IOU: {avg_iou}")  # DEB
+                print(f"AVG CENTROID DIST: {avg_centroid_dist}")  # DEB
+                print("-" * 75)  # DEB
                 to_remove_det_indices = []
                 to_remove_trk_indices = []
                 for m in rematched_indices:

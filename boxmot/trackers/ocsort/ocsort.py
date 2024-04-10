@@ -10,6 +10,14 @@ from boxmot.utils.association import associate, linear_assignment
 from boxmot.utils.iou import get_asso_func
 from boxmot.utils.iou import run_asso_func
 
+# Following package and related code was
+# added by DEB to print the CMC-related
+# before and after KF state mean bboxes
+# for debugging purposes.
+# =======================================================
+from boxmot.utils.iou import iou_batch, centroid_batch
+# =======================================================
+
 
 def k_previous_obs(observations, cur_age, k):
     if len(observations) == 0:
@@ -324,6 +332,23 @@ class OCSort(object):
             w=w, 
             h=h
         )
+        avg_iou = np.around(
+            np.mean(np.diag(iou_batch(
+                bboxes1=dets[matched[:, 0], :4],
+                bboxes2=trks[matched[:, 1], :4]
+            ))), 4
+        )  # DEB
+        avg_centroid_dist = np.around(
+            np.mean(np.diag(centroid_batch(
+                bboxes1=dets[matched[:, 0], :4],
+                bboxes2=trks[matched[:, 1], :4],
+                w=w, h=h
+            ))), 4
+        )  # DEB
+        print("ASSOCIATION ROUND 1")  # DEB
+        print(f"AVG IOU: {avg_iou}")  # DEB
+        print(f"AVG CENTROID DIST: {avg_centroid_dist}")  # DEB
+        print("-" * 75)  # DEB
         for m in matched:
             self.trackers[m[1]].update(
                 bbox=dets[m[0], :5], 
@@ -348,9 +373,23 @@ class OCSort(object):
                 uniform here for simplicity
                 """
                 matched_indices = linear_assignment(-iou_left)
-                print(f"matched_indices shape: {matched_indices.shape}")
-                print(f"matched_indices: \n{matched_indices}")
-                print("-" * 75)
+                avg_iou = np.around(
+                    np.mean(np.diag(iou_batch(
+                        bboxes1=dets_second[matched_indices[:, 0], :4],
+                        bboxes2=u_trks[matched_indices[:, 1], :4]
+                    ))), 4
+                )  # DEB
+                avg_centroid_dist = np.around(
+                    np.mean(np.diag(centroid_batch(
+                        bboxes1=dets_second[matched_indices[:, 0], :4],
+                        bboxes2=u_trks[matched_indices[:, 1], :4],
+                        w=w, h=h
+                    ))), 4
+                )  # DEB
+                print("ASSOCIATION ROUND 2")  # DEB
+                print(f"AVG IOU: {avg_iou}")  # DEB
+                print(f"AVG CENTROID DIST: {avg_centroid_dist}")  # DEB
+                print("-" * 75)  # DEB
                 to_remove_trk_indices = []
                 for m in matched_indices:
                     det_ind, trk_ind = m[0], unmatched_trks[m[1]]
@@ -378,9 +417,23 @@ class OCSort(object):
                 uniform here for simplicity
                 """
                 rematched_indices = linear_assignment(-iou_left)
-                print(f"rematched_indices shape: {rematched_indices.shape}")
-                print(f"rematched_indices: \n{rematched_indices}")
-                print("-" * 75)
+                avg_iou = np.around(
+                    np.mean(np.diag(iou_batch(
+                        bboxes1=dets[unmatched_dets[rematched_indices[:, 0]], :4],
+                        bboxes2=last_boxes[unmatched_trks[rematched_indices[:, 1]], :4]
+                    ))), 4
+                )  # DEB
+                avg_centroid_dist = np.around(
+                    np.mean(np.diag(centroid_batch(
+                        bboxes1=dets[unmatched_dets[rematched_indices[:, 0]], :4],
+                        bboxes2=last_boxes[unmatched_trks[rematched_indices[:, 1]], :4],
+                        w=w, h=h
+                    ))), 4
+                )  # DEB
+                print("UNMATCHED DETECTIONS")  # DEB
+                print(f"AVG IOU: {avg_iou}")  # DEB
+                print(f"AVG CENTROID DIST: {avg_centroid_dist}")  # DEB
+                print("-" * 75)  # DEB
                 to_remove_det_indices = []
                 to_remove_trk_indices = []
                 for m in rematched_indices:

@@ -8,9 +8,20 @@ from boxmot.appearance.reid_multibackend import ReIDDetectMultiBackend
 from boxmot.motion.cmc.sof import SparseOptFlow
 from boxmot.motion.kalman_filters.botsort_kf import KalmanFilter
 from boxmot.trackers.botsort.basetrack import BaseTrack, TrackState
-from boxmot.utils.matching import (embedding_distance, fuse_score,
-                                   iou_distance, linear_assignment)
+from boxmot.utils.matching import (
+    embedding_distance, 
+    fuse_score,
+    iou_distance, 
+    linear_assignment
+)
 from boxmot.utils.ops import xywh2xyxy, xyxy2xywh
+
+# Following package and related code was
+# added by DEB to print average IoU and average
+# centroid distances for debugging purposes.
+# =======================================================
+from boxmot.utils.iou import iou_batch, centroid_batch
+# =======================================================
 
 
 class STrack(BaseTrack):
@@ -230,14 +241,21 @@ class BoTSORT(object):
         refind_stracks = []
         lost_stracks = []
         removed_stracks = []
+        h, w = img.shape[0:2]
 
-        dets = np.hstack([dets, np.arange(len(dets)).reshape(-1, 1)])
+        dets = np.hstack([
+            dets, 
+            np.arange(len(dets)).reshape(-1, 1)
+        ])
 
         # Remove bad detections
         confs = dets[:, 4]
 
         # find second round association detections
-        second_mask = np.logical_and(confs > self.track_low_thresh, confs < self.track_high_thresh)
+        second_mask = np.logical_and(
+            confs > self.track_low_thresh, 
+            confs < self.track_high_thresh
+        )
         dets_second = dets[second_mask]
 
         # find first round association detections
@@ -280,6 +298,36 @@ class BoTSORT(object):
         matches, u_track, u_detection = linear_assignment(
             dists, thresh=self.match_thresh
         )
+        if matches.shape[0] > 0:
+            avg_iou = np.around(
+                np.mean(np.diag(iou_batch(
+                    bboxes1=np.array([
+                        strack_pool[matches[m_i, 0]].xyxy
+                        for m_i in range(matches.shape[0])
+                    ]),
+                    bboxes2=np.array([
+                        detections[matches[m_i, 1]].xyxy
+                        for m_i in range(matches.shape[0])
+                    ])
+                ))), 4
+            )  # DEB
+            avg_centroid_dist = np.around(
+                np.mean(np.diag(centroid_batch(
+                    bboxes1=np.array([
+                        strack_pool[matches[m_i, 0]].xyxy
+                        for m_i in range(matches.shape[0])
+                    ]),
+                    bboxes2=np.array([
+                        detections[matches[m_i, 1]].xyxy
+                        for m_i in range(matches.shape[0])
+                    ]),
+                    w=w, h=h
+                ))), 4
+            )  # DEB
+            print("ASSOCIATION ROUND 1")  # DEB
+            print(f"AVG IOU: {avg_iou}")  # DEB
+            print(f"AVG CENTROID DIST: {avg_centroid_dist}")  # DEB
+            print("-" * 75)  # DEB
 
         for itracked, idet in matches:
             track = strack_pool[itracked]
@@ -307,6 +355,36 @@ class BoTSORT(object):
         matches, u_track, u_detection_second = linear_assignment(
             cost_matrix=dists, thresh=0.5
         )
+        if matches.shape[0] > 0:
+            avg_iou = np.around(
+                np.mean(np.diag(iou_batch(
+                    bboxes1=np.array([
+                        r_tracked_stracks[matches[m_i, 0]].xyxy
+                        for m_i in range(matches.shape[0])
+                    ]),
+                    bboxes2=np.array([
+                        detections_second[matches[m_i, 1]].xyxy
+                        for m_i in range(matches.shape[0])
+                    ])
+                ))), 4
+            )  # DEB
+            avg_centroid_dist = np.around(
+                np.mean(np.diag(centroid_batch(
+                    bboxes1=np.array([
+                        r_tracked_stracks[matches[m_i, 0]].xyxy
+                        for m_i in range(matches.shape[0])
+                    ]),
+                    bboxes2=np.array([
+                        detections_second[matches[m_i, 1]].xyxy
+                        for m_i in range(matches.shape[0])
+                    ]),
+                    w=w, h=h
+                ))), 4
+            )  # DEB
+            print("ASSOCIATION ROUND 2")  # DEB
+            print(f"AVG IOU: {avg_iou}")  # DEB
+            print(f"AVG CENTROID DIST: {avg_centroid_dist}")  # DEB
+            print("-" * 75)  # DEB
         for itracked, idet in matches:
             track = r_tracked_stracks[itracked]
             det = detections_second[idet]
@@ -334,6 +412,36 @@ class BoTSORT(object):
         matches, u_unconfirmed, u_detection = linear_assignment(
             cost_matrix=dists, thresh=0.7
         )
+        if matches.shape[0] > 0:
+            avg_iou = np.around(
+                np.mean(np.diag(iou_batch(
+                    bboxes1=np.array([
+                        unconfirmed[matches[m_i, 0]].xyxy
+                        for m_i in range(matches.shape[0])
+                    ]),
+                    bboxes2=np.array([
+                        detections[matches[m_i, 1]].xyxy
+                        for m_i in range(matches.shape[0])
+                    ])
+                ))), 4
+            )  # DEB
+            avg_centroid_dist = np.around(
+                np.mean(np.diag(centroid_batch(
+                    bboxes1=np.array([
+                        unconfirmed[matches[m_i, 0]].xyxy
+                        for m_i in range(matches.shape[0])
+                    ]),
+                    bboxes2=np.array([
+                        detections[matches[m_i, 1]].xyxy
+                        for m_i in range(matches.shape[0])
+                    ]),
+                    w=w, h=h
+                ))), 4
+            )  # DEB
+            print("UNCONFIRMED TRACKS")
+            print(f"AVG IOU: {avg_iou}")  # DEB
+            print(f"AVG CENTROID DIST: {avg_centroid_dist}")  # DEB
+            print("-" * 75)  # DEB
         for itracked, idet in matches:
             unconfirmed[itracked].update(detections[idet], self.frame_id)
             activated_starcks.append(unconfirmed[itracked])
