@@ -26,7 +26,21 @@ from boxmot.utils.ops import (
 # distances for debugging purposes.
 # =======================================================
 from boxmot.utils.iou import iou_batch, centroid_batch
+import logging
+from boxmot.utils.logger import Logger
 # =======================================================
+
+
+def update_avg_stat(prev_batch_avg_stat, 
+                    prev_batch_count,
+                    cur_batch_avg_stat,
+                    cur_batch_count):
+    stat_freq = prev_batch_count + cur_batch_count
+    avg_stat = (
+        (prev_batch_avg_stat * prev_batch_count) +
+        (cur_batch_avg_stat * cur_batch_count)
+    ) / stat_freq
+    return avg_stat, stat_freq
 
 
 class STrack(BaseTrack):
@@ -247,16 +261,16 @@ class STrack(BaseTrack):
 
 
 class BoTSORT_DC(object):
-    def __init__(
-        self,
-        track_high_thresh: float = 0.5,
-        track_low_thresh: float = 0.1,
-        new_track_thresh: float = 0.6,
-        track_buffer: int = 30,
-        match_thresh: float = 0.8,
-        frame_rate=30,
-        fuse_first_associate: bool = False
-    ):
+    def __init__(self,
+                 debug: bool = False,
+                 track_high_thresh: float = 0.5,
+                 track_low_thresh: float = 0.1,
+                 new_track_thresh: float = 0.6,
+                 track_buffer: int = 30,
+                 match_thresh: float = 0.8,
+                 frame_rate=30,
+                 fuse_first_associate: bool = False):
+        self.debug = debug
         self.tracked_stracks = []  # type: list[STrack]
         self.lost_stracks = []  # type: list[STrack]
         self.removed_stracks = []  # type: list[STrack]
@@ -275,6 +289,11 @@ class BoTSORT_DC(object):
         
         self.cmc = SparseOptFlow()
         self.fuse_first_associate = fuse_first_associate
+
+        self.logger = Logger.get_logger(
+            name=__name__, 
+            level=logging.DEBUG if self.debug else logging.INFO
+        )
 
     def update(self, dets, img):
         err_msg = f"Unsupported 'dets' input format '{type(dets)}', valid format is np.ndarray."
@@ -303,6 +322,12 @@ class BoTSORT_DC(object):
         lost_stracks = []
         removed_stracks = []
         h, w = img.shape[0:2]
+
+        # Debugging statistics
+        avg_iou = 0
+        freq_iou = 0
+        avg_centroid_dist = 0
+        freq_centroid_dist = 0
 
         # Appends a new column to the dets array, where the new 
         # column contains integers representing the indices of 
@@ -379,7 +404,7 @@ class BoTSORT_DC(object):
             dists, thresh=self.match_thresh
         )
         if matches.shape[0] > 0:
-            avg_iou = np.around(
+            cur_batch_avg_iou = np.around(
                 np.mean(np.diag(iou_batch(
                     bboxes1=np.array([
                         strack_pool[matches[m_i, 0]].xyxy_dc
@@ -390,8 +415,14 @@ class BoTSORT_DC(object):
                         for m_i in range(matches.shape[0])
                     ])
                 ))), 4
-            )  # DEB
-            avg_centroid_dist = np.around(
+            )
+            avg_iou, freq_iou = update_avg_stat(
+                prev_batch_avg_stat=0, 
+                prev_batch_count=0,
+                cur_batch_avg_stat=cur_batch_avg_iou,
+                cur_batch_count=matches.shape[0]
+            )
+            cur_batch_avg_centroid_dist = np.around(
                 np.mean(np.diag(centroid_batch(
                     bboxes1=np.array([
                         strack_pool[matches[m_i, 0]].xyxy_dc
@@ -403,11 +434,13 @@ class BoTSORT_DC(object):
                     ]),
                     w=w, h=h
                 ))), 4
-            )  # DEB
-            print("ASSOCIATION ROUND 1")  # DEB
-            print(f"AVG IOU: {avg_iou}")  # DEB
-            print(f"AVG CENTROID DIST: {avg_centroid_dist}")  # DEB
-            print("-" * 75)  # DEB
+            )
+            avg_centroid_dist, freq_centroid_dist = update_avg_stat(
+                prev_batch_avg_stat=0, 
+                prev_batch_count=0,
+                cur_batch_avg_stat=cur_batch_avg_centroid_dist,
+                cur_batch_count=matches.shape[0]
+            )
 
         for itracked, idet in matches:
             track = strack_pool[itracked]
@@ -444,7 +477,7 @@ class BoTSORT_DC(object):
                 thresh=0.5
             )
         if matches.shape[0] > 0:
-            avg_iou = np.around(
+            cur_batch_avg_iou = np.around(
                 np.mean(np.diag(iou_batch(
                     bboxes1=np.array([
                         r_tracked_stracks[matches[m_i, 0]].xyxy_dc
@@ -455,8 +488,14 @@ class BoTSORT_DC(object):
                         for m_i in range(matches.shape[0])
                     ])
                 ))), 4
-            )  # DEB
-            avg_centroid_dist = np.around(
+            )
+            avg_iou, freq_iou = update_avg_stat(
+                prev_batch_avg_stat=avg_iou, 
+                prev_batch_count=freq_iou,
+                cur_batch_avg_stat=cur_batch_avg_iou,
+                cur_batch_count=matches.shape[0]
+            )
+            cur_batch_avg_centroid_dist = np.around(
                 np.mean(np.diag(centroid_batch(
                     bboxes1=np.array([
                         r_tracked_stracks[matches[m_i, 0]].xyxy_dc
@@ -468,11 +507,14 @@ class BoTSORT_DC(object):
                     ]),
                     w=w, h=h
                 ))), 4
-            )  # DEB
-            print("ASSOCIATION ROUND 2")  # DEB
-            print(f"AVG IOU: {avg_iou}")  # DEB
-            print(f"AVG CENTROID DIST: {avg_centroid_dist}")  # DEB
-            print("-" * 75)  # DEB
+            )
+            avg_centroid_dist, freq_centroid_dist = update_avg_stat(
+                prev_batch_avg_stat=avg_centroid_dist, 
+                prev_batch_count=freq_centroid_dist,
+                cur_batch_avg_stat=cur_batch_avg_centroid_dist,
+                cur_batch_count=matches.shape[0]
+            )
+
         for itracked, idet in matches:
             track = r_tracked_stracks[itracked]
             det = detections_second[idet]
@@ -509,7 +551,7 @@ class BoTSORT_DC(object):
                 thresh=0.7
             )
         if matches.shape[0] > 0:
-            avg_iou = np.around(
+            cur_batch_avg_iou = np.around(
                 np.mean(np.diag(iou_batch(
                     bboxes1=np.array([
                         unconfirmed[matches[m_i, 0]].xyxy_dc
@@ -520,8 +562,14 @@ class BoTSORT_DC(object):
                         for m_i in range(matches.shape[0])
                     ])
                 ))), 4
-            )  # DEB
-            avg_centroid_dist = np.around(
+            )
+            avg_iou, freq_iou = update_avg_stat(
+                prev_batch_avg_stat=avg_iou, 
+                prev_batch_count=freq_iou,
+                cur_batch_avg_stat=cur_batch_avg_iou,
+                cur_batch_count=matches.shape[0]
+            )
+            cur_batch_avg_centroid_dist = np.around(
                 np.mean(np.diag(centroid_batch(
                     bboxes1=np.array([
                         unconfirmed[matches[m_i, 0]].xyxy_dc
@@ -533,11 +581,14 @@ class BoTSORT_DC(object):
                     ]),
                     w=w, h=h
                 ))), 4
-            )  # DEB
-            print("UNCONFIRMED TRACKS")
-            print(f"AVG IOU: {avg_iou}")  # DEB
-            print(f"AVG CENTROID DIST: {avg_centroid_dist}")  # DEB
-            print("-" * 75)  # DEB
+            )
+            avg_centroid_dist, freq_centroid_dist = update_avg_stat(
+                prev_batch_avg_stat=avg_centroid_dist, 
+                prev_batch_count=freq_centroid_dist,
+                cur_batch_avg_stat=cur_batch_avg_centroid_dist,
+                cur_batch_count=matches.shape[0]
+            )
+
         for itracked, idet in matches:
             unconfirmed[itracked].update(
                 new_track=detections[idet], 
@@ -612,7 +663,9 @@ class BoTSORT_DC(object):
             outputs.append(output)
 
         outputs = np.asarray(outputs)
-        return outputs
+        self.logger.debug(f"Average IoU: {avg_iou:>0.4f}")
+        self.logger.debug(f"Average centroid dist: : {avg_centroid_dist:>0.4f}")
+        return outputs, avg_iou, avg_centroid_dist
 
 
 def joint_stracks(tlista, tlistb):

@@ -25,7 +25,21 @@ from boxmot.utils.iou import run_asso_func
 # for debugging purposes.
 # =======================================================
 from boxmot.utils.iou import iou_batch, centroid_batch
+import logging
+from boxmot.utils.logger import Logger
 # =======================================================
+
+
+def update_avg_stat(prev_batch_avg_stat, 
+                    prev_batch_count,
+                    cur_batch_avg_stat,
+                    cur_batch_count):
+    stat_freq = prev_batch_count + cur_batch_count
+    avg_stat = (
+        (prev_batch_avg_stat * prev_batch_count) +
+        (cur_batch_avg_stat * cur_batch_count)
+    ) / stat_freq
+    return avg_stat, stat_freq
 
 
 def k_previous_obs(observations, cur_age, k):
@@ -309,6 +323,7 @@ class KalmanBoxTracker(object):
 
 class OCSORT_DT(object):
     def __init__(self,
+                 debug=False,
                  det_thresh=0.2,
                  max_age=30,
                  min_hits=3,
@@ -320,6 +335,7 @@ class OCSORT_DT(object):
         """
         Sets key parameters for SORT
         """
+        self.debug = debug
         self.max_age = max_age
         self.min_hits = min_hits
         self.asso_threshold = asso_threshold
@@ -331,6 +347,11 @@ class OCSORT_DT(object):
         self.inertia = inertia
         self.use_byte = use_byte
         KalmanBoxTracker.count = 0
+
+        self.logger = Logger.get_logger(
+            name=__name__, 
+            level=logging.DEBUG if self.debug else logging.INFO
+        )
 
     def update(self, dets, img):
         """
@@ -367,6 +388,12 @@ class OCSORT_DT(object):
 
         self.frame_count += 1
         h, w = img.shape[0:2]
+
+        # Debugging statistics
+        avg_iou = 0
+        freq_iou = 0
+        avg_centroid_dist = 0
+        freq_centroid_dist = 0
 
         # Appends a new column to the dets array, where the new 
         # column contains integers representing the indices of 
@@ -435,23 +462,31 @@ class OCSORT_DT(object):
             w=w, 
             h=h
         )
-        avg_iou = np.around(
+        cur_batch_avg_iou = np.around(
             np.mean(np.diag(iou_batch(
                 bboxes1=dets[matched[:, 0], :4],
                 bboxes2=trks[matched[:, 1], :4]
             ))), 4
-        )  # DEB
-        avg_centroid_dist = np.around(
+        )
+        avg_iou, freq_iou = update_avg_stat(
+            prev_batch_avg_stat=0, 
+            prev_batch_count=0,
+            cur_batch_avg_stat=cur_batch_avg_iou,
+            cur_batch_count=matched.shape[0]
+        )
+        cur_batch_avg_centroid_dist = np.around(
             np.mean(np.diag(centroid_batch(
                 bboxes1=dets[matched[:, 0], :4],
                 bboxes2=trks[matched[:, 1], :4],
                 w=w, h=h
             ))), 4
-        )  # DEB
-        print("ASSOCIATION ROUND 1")  # DEB
-        print(f"AVG IOU: {avg_iou}")  # DEB
-        print(f"AVG CENTROID DIST: {avg_centroid_dist}")  # DEB
-        print("-" * 75)  # DEB
+        )
+        avg_centroid_dist, freq_centroid_dist = update_avg_stat(
+            prev_batch_avg_stat=0, 
+            prev_batch_count=0,
+            cur_batch_avg_stat=cur_batch_avg_centroid_dist,
+            cur_batch_count=matched.shape[0]
+        )
         for m in matched:
             self.trackers[m[1]].update(
                 bbox=dets[m[0], :6], 
@@ -477,23 +512,31 @@ class OCSORT_DT(object):
                 uniform here for simplicity
                 """
                 matched_indices = linear_assignment(-iou_left)
-                avg_iou = np.around(
+                cur_batch_avg_iou = np.around(
                     np.mean(np.diag(iou_batch(
                         bboxes1=dets_second[matched_indices[:, 0], :4],
                         bboxes2=u_trks[matched_indices[:, 1], :4]
                     ))), 4
-                )  # DEB
-                avg_centroid_dist = np.around(
+                )
+                avg_iou, freq_iou = update_avg_stat(
+                    prev_batch_avg_stat=avg_iou, 
+                    prev_batch_count=freq_iou,
+                    cur_batch_avg_stat=cur_batch_avg_iou,
+                    cur_batch_count=matched_indices.shape[0]
+                )
+                cur_batch_avg_centroid_dist = np.around(
                     np.mean(np.diag(centroid_batch(
                         bboxes1=dets_second[matched_indices[:, 0], :4],
                         bboxes2=u_trks[matched_indices[:, 1], :4],
                         w=w, h=h
                     ))), 4
-                )  # DEB
-                print("ASSOCIATION ROUND 2")  # DEB
-                print(f"AVG IOU: {avg_iou}")  # DEB
-                print(f"AVG CENTROID DIST: {avg_centroid_dist}")  # DEB
-                print("-" * 75)  # DEB
+                )
+                avg_centroid_dist, freq_centroid_dist = update_avg_stat(
+                    prev_batch_avg_stat=avg_centroid_dist, 
+                    prev_batch_count=freq_centroid_dist,
+                    cur_batch_avg_stat=cur_batch_avg_centroid_dist,
+                    cur_batch_count=matched_indices.shape[0]
+                )
                 to_remove_trk_indices = []
                 for m in matched_indices:
                     det_ind, trk_ind = m[0], unmatched_trks[m[1]]
@@ -526,18 +569,26 @@ class OCSORT_DT(object):
                         bboxes1=dets[unmatched_dets[rematched_indices[:, 0]], :4],
                         bboxes2=last_boxes[unmatched_trks[rematched_indices[:, 1]], :4]
                     ))), 4
-                )  # DEB
+                )
+                avg_iou, freq_iou = update_avg_stat(
+                    prev_batch_avg_stat=avg_iou, 
+                    prev_batch_count=freq_iou,
+                    cur_batch_avg_stat=cur_batch_avg_iou,
+                    cur_batch_count=rematched_indices.shape[0]
+                )
                 avg_centroid_dist = np.around(
                     np.mean(np.diag(centroid_batch(
                         bboxes1=dets[unmatched_dets[rematched_indices[:, 0]], :4],
                         bboxes2=last_boxes[unmatched_trks[rematched_indices[:, 1]], :4],
                         w=w, h=h
                     ))), 4
-                )  # DEB
-                print("UNMATCHED DETECTIONS")  # DEB
-                print(f"AVG IOU: {avg_iou}")  # DEB
-                print(f"AVG CENTROID DIST: {avg_centroid_dist}")  # DEB
-                print("-" * 75)  # DEB
+                )
+                avg_centroid_dist, freq_centroid_dist = update_avg_stat(
+                    prev_batch_avg_stat=avg_centroid_dist, 
+                    prev_batch_count=freq_centroid_dist,
+                    cur_batch_avg_stat=cur_batch_avg_centroid_dist,
+                    cur_batch_count=rematched_indices.shape[0]
+                )
                 to_remove_det_indices = []
                 to_remove_trk_indices = []
                 for m in rematched_indices:
@@ -605,6 +656,8 @@ class OCSORT_DT(object):
             # remove dead tracklet
             if trk.time_since_update > self.max_age:
                 self.trackers.pop(i)
+        self.logger.debug(f"Average IoU: {avg_iou:>0.4f}")
+        self.logger.debug(f"Average centroid dist: : {avg_centroid_dist:>0.4f}")
         if len(ret) > 0:
             return np.concatenate(ret)
         return np.array([])
