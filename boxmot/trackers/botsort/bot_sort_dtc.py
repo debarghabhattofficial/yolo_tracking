@@ -727,7 +727,7 @@ class BoTSORT_DTC(object):
         outputs = np.asarray(outputs)
         self.logger.debug(f"Average IoU: {avg_iou:>0.4f}")
         self.logger.debug(f"Average centroid dist: : {avg_centroid_dist:>0.4f}")
-        return outputs, avg_iou, avg_centroid_dist
+        return outputs
 
 
 def joint_stracks(tlista, tlistb):
