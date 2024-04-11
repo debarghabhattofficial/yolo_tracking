@@ -280,45 +280,6 @@ class KalmanBoxTracker(object):
         Returns the current bounding box estimate.
         """
         return convert_x_to_bbox_dt(x=self.kf.x)
-    
-    @staticmethod
-    def multi_gmc_dt(stracks, H=np.eye(2, 3)):
-        # NOTE: Make changes to this method to account for
-        # camera motion compensation while updating the
-        # state of the tracklets.
-        if len(stracks) > 0:
-            multi_mean = np.asarray([st.kf.x.copy() for st in stracks])
-            multi_covariance = np.asarray([st.kf.P for st in stracks])
-
-            R = H[:2, :2]
-            R8x8 = np.kron(np.eye(4, dtype=float), R)
-            t = H[:2, 2].reshape(-1, 1)
-
-            for i, (mean, cov) in enumerate(zip(multi_mean, multi_covariance)):
-                # Get transformed state mean vector.
-                sub_mean = np.concatenate([
-                    mean[:4],  # 4 x 1
-                    mean[5:9]  # 4 x 1
-                ])
-                sub_mean = R8x8.dot(sub_mean)
-                sub_mean[:2] += t
-                sub_mean[2:4] += t
-                mean[:4] = sub_mean[:4]
-                mean[5:9] = sub_mean[4:]
-
-                # Get transformed state covariance matrix.
-                sub_cov = np.block([
-                    [cov[:4, :4], cov[:4, 5:9]],
-                    [cov[5:9, :4], cov[5:9, 5:9]]
-                ])
-                sub_cov = R8x8.dot(sub_cov).dot(R8x8.transpose())
-                cov[:4, :4] = sub_cov[:4, :4]
-                cov[:4, 5:9] = sub_cov[:4, 4:]
-                cov[5:9, :4] = sub_cov[4:, :4]
-                cov[5:9, 5:9] = sub_cov[4:, 4:]
-
-                stracks[i].kf.x = mean
-                stracks[i].kf.P = cov
 
 
 class OCSORT_DT(object):

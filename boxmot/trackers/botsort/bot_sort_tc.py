@@ -115,7 +115,7 @@ class STrack(BaseTrack):
     # NOTE: Replace every call to self.multi_gmc() method with
     # self.multi_gmc_tc() method.
     @staticmethod
-    def multi_gmc_tc(stracks, H=np.eye(2, 3), img=None):
+    def multi_gmc_tc(stracks, H=np.eye(2, 3), img=None, debug=False):
         # NOTE: Make changes to this method to account for
         # camera motion compensation while updating the
         # state of the tracklets.
@@ -132,88 +132,90 @@ class STrack(BaseTrack):
             t = H[:2, 2]
 
             for i, (mean, cov) in enumerate(zip(multi_mean, multi_covariance)):
-                # Display bbox for state mean vector before
-                # applying the affine transformation.
-                # =================================================
-                b_text = f"B: {i + 1}"
-                (b_text_w, b_text_h), _ = cv2.getTextSize(
-                    text=b_text,
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.5,
-                    thickness=1
-                )
-                b_tl, b_br = mean[:2], mean[2:4]
-                b_tl = (int(b_tl[0]), int(b_tl[1]))
-                b_br = (int(b_br[0]), int(b_br[1]))
-                cv2.rectangle(
-                    img=img, 
-                    pt1=b_tl, 
-                    pt2=b_br, 
-                    color=(255, 255, 255),  # (0, 255, 0)
-                    thickness=2
-                )
-                cv2.rectangle(
-                    img=img, 
-                    pt1=b_tl, 
-                    pt2=(b_tl[0] + b_text_w - 1, b_tl[1] + b_text_h - 1), 
-                    color=(255, 255, 255),  # (0, 255, 0)
-                    thickness=-1
-                )
-                cv2.putText(
-                    img=img,
-                    text=b_text,
-                    org=(b_tl[0], b_tl[1] + b_text_h - 1),
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.5,
-                    color=(0, 0, 0),  # (0, 255, 0)
-                    thickness=1,
-                    lineType=cv2.LINE_AA
-                )
-                # =================================================
+                if debug:
+                    # Display bbox for state mean vector before
+                    # applying the affine transformation.
+                    # =================================================
+                    b_text = f"B: {i + 1}"
+                    (b_text_w, b_text_h), _ = cv2.getTextSize(
+                        text=b_text,
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=0.5,
+                        thickness=1
+                    )
+                    b_tl, b_br = mean[:2], mean[2:4]
+                    b_tl = (int(b_tl[0]), int(b_tl[1]))
+                    b_br = (int(b_br[0]), int(b_br[1]))
+                    cv2.rectangle(
+                        img=img, 
+                        pt1=b_tl, 
+                        pt2=b_br, 
+                        color=(255, 255, 255),  # (0, 255, 0)
+                        thickness=2
+                    )
+                    cv2.rectangle(
+                        img=img, 
+                        pt1=b_tl, 
+                        pt2=(b_tl[0] + b_text_w - 1, b_tl[1] + b_text_h - 1), 
+                        color=(255, 255, 255),  # (0, 255, 0)
+                        thickness=-1
+                    )
+                    cv2.putText(
+                        img=img,
+                        text=b_text,
+                        org=(b_tl[0], b_tl[1] + b_text_h - 1),
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=0.5,
+                        color=(0, 0, 0),  # (0, 255, 0)
+                        thickness=1,
+                        lineType=cv2.LINE_AA
+                    )
+                    # =================================================
                 
                 # Get transformed state mean vector.
                 mean = R8x8.dot(mean)
                 mean[:2] += t
                 mean[2:4] += t
 
-                # Display bbox for state mean vector after
-                # applying the affine transformation.
-                # =================================================
-                a_text = f"A: {i + 1}"
-                (a_text_w, a_text_h), _ = cv2.getTextSize(
-                    text=a_text,
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.5,
-                    thickness=1
-                )
-                a_tl, a_br = mean[:2], mean[2:4]
-                a_tl = (int(a_tl[0]), int(a_tl[1]))
-                a_br = (int(a_br[0]), int(a_br[1]))
-                cv2.rectangle(
-                    img=img, 
-                    pt1=a_tl, 
-                    pt2=a_br, 
-                    color=(0, 0, 0),  # (0, 255, 0)
-                    thickness=2
-                )
-                cv2.rectangle(
-                    img=img, 
-                    pt1=a_tl, 
-                    pt2=(a_tl[0] + a_text_w - 1, a_tl[1] + a_text_h - 1), 
-                    color=(0, 0, 0),  # (0, 255, 0)
-                    thickness=-1
-                )
-                cv2.putText(
-                    img=img,
-                    text=a_text,
-                    org=(a_tl[0], a_tl[1] + a_text_h - 1),
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.5,
-                    color=(255, 255, 255),  # (0, 255, 0)
-                    thickness=1,
-                    lineType=cv2.LINE_AA
-                )
-                # =================================================
+                if debug:
+                    # Display bbox for state mean vector after
+                    # applying the affine transformation.
+                    # =================================================
+                    a_text = f"A: {i + 1}"
+                    (a_text_w, a_text_h), _ = cv2.getTextSize(
+                        text=a_text,
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=0.5,
+                        thickness=1
+                    )
+                    a_tl, a_br = mean[:2], mean[2:4]
+                    a_tl = (int(a_tl[0]), int(a_tl[1]))
+                    a_br = (int(a_br[0]), int(a_br[1]))
+                    cv2.rectangle(
+                        img=img, 
+                        pt1=a_tl, 
+                        pt2=a_br, 
+                        color=(0, 0, 0),  # (0, 255, 0)
+                        thickness=2
+                    )
+                    cv2.rectangle(
+                        img=img, 
+                        pt1=a_tl, 
+                        pt2=(a_tl[0] + a_text_w - 1, a_tl[1] + a_text_h - 1), 
+                        color=(0, 0, 0),  # (0, 255, 0)
+                        thickness=-1
+                    )
+                    cv2.putText(
+                        img=img,
+                        text=a_text,
+                        org=(a_tl[0], a_tl[1] + a_text_h - 1),
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=0.5,
+                        color=(255, 255, 255),  # (0, 255, 0)
+                        thickness=1,
+                        lineType=cv2.LINE_AA
+                    )
+                    # =================================================
 
                 # Get transformed state covariance matrix.
                 cov = R8x8.dot(cov).dot(R8x8.transpose())
@@ -432,8 +434,8 @@ class BoTSORT_TC(object):
 
         # Fix camera motion.
         warp = self.cmc.apply(img, dets_first[:, :4])
-        STrack.multi_gmc_tc(strack_pool, warp, img)
-        STrack.multi_gmc_tc(unconfirmed, warp, img)
+        STrack.multi_gmc_tc(strack_pool, warp, img, self.debug)
+        STrack.multi_gmc_tc(unconfirmed, warp, img, self.debug)
 
         # Associate with high score detection boxes.
         ious_dists = iou_distance_tc(

@@ -269,7 +269,7 @@ class KalmanBoxTracker(object):
         return convert_x_to_bbox_tc(x=self.kf.x)
     
     @staticmethod
-    def multi_gmc_tc(stracks, H=np.eye(2, 3), img=None):
+    def multi_gmc_tc(stracks, H=np.eye(2, 3), img=None, debug=False):
         # NOTE: Make changes to this method to account for
         # camera motion compensation while updating the
         # state of the tracklets.
@@ -282,88 +282,90 @@ class KalmanBoxTracker(object):
             t = H[:2, 2].reshape(-1, 1)
 
             for i, (mean, cov) in enumerate(zip(multi_mean, multi_covariance)):
-                # Display bbox for state mean vector before
-                # applying the affine transformation.
-                # =================================================
-                b_text = f"B: {i + 1}"
-                (b_text_w, b_text_h), _ = cv2.getTextSize(
-                    text=b_text,
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.5,
-                    thickness=1
-                )
-                b_tl, b_br = mean[:2], mean[2:4]
-                b_tl = (int(b_tl[0]), int(b_tl[1]))
-                b_br = (int(b_br[0]), int(b_br[1]))
-                cv2.rectangle(
-                    img=img, 
-                    pt1=b_tl, 
-                    pt2=b_br, 
-                    color=(255, 255, 255),  # (0, 255, 0)
-                    thickness=2
-                )
-                cv2.rectangle(
-                    img=img, 
-                    pt1=b_tl, 
-                    pt2=(b_tl[0] + b_text_w - 1, b_tl[1] + b_text_h - 1), 
-                    color=(255, 255, 255),  # (0, 255, 0)
-                    thickness=-1
-                )
-                cv2.putText(
-                    img=img,
-                    text=b_text,
-                    org=(b_tl[0], b_tl[1] + b_text_h - 1),
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.5,
-                    color=(0, 0, 0),  # (0, 255, 0)
-                    thickness=1,
-                    lineType=cv2.LINE_AA
-                )
-                # =================================================
+                if debug:
+                    # Display bbox for state mean vector before
+                    # applying the affine transformation.
+                    # =================================================
+                    b_text = f"B: {i + 1}"
+                    (b_text_w, b_text_h), _ = cv2.getTextSize(
+                        text=b_text,
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=0.5,
+                        thickness=1
+                    )
+                    b_tl, b_br = mean[:2], mean[2:4]
+                    b_tl = (int(b_tl[0]), int(b_tl[1]))
+                    b_br = (int(b_br[0]), int(b_br[1]))
+                    cv2.rectangle(
+                        img=img, 
+                        pt1=b_tl, 
+                        pt2=b_br, 
+                        color=(255, 255, 255),  # (0, 255, 0)
+                        thickness=2
+                    )
+                    cv2.rectangle(
+                        img=img, 
+                        pt1=b_tl, 
+                        pt2=(b_tl[0] + b_text_w - 1, b_tl[1] + b_text_h - 1), 
+                        color=(255, 255, 255),  # (0, 255, 0)
+                        thickness=-1
+                    )
+                    cv2.putText(
+                        img=img,
+                        text=b_text,
+                        org=(b_tl[0], b_tl[1] + b_text_h - 1),
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=0.5,
+                        color=(0, 0, 0),  # (0, 255, 0)
+                        thickness=1,
+                        lineType=cv2.LINE_AA
+                    )
+                    # =================================================
 
                 # Get transformed state mean vector.
                 mean = R8x8.dot(mean)
                 mean[:2] += t
                 mean[2:4] += t
 
-                # Display bbox for state mean vector after
-                # applying the affine transformation.
-                # =================================================
-                a_text = f"A: {i + 1}"
-                (a_text_w, a_text_h), _ = cv2.getTextSize(
-                    text=a_text,
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.5,
-                    thickness=1
-                )
-                a_tl, a_br = mean[:2], mean[2:4]
-                a_tl = (int(a_tl[0]), int(a_tl[1]))
-                a_br = (int(a_br[0]), int(a_br[1]))
-                cv2.rectangle(
-                    img=img, 
-                    pt1=a_tl, 
-                    pt2=a_br, 
-                    color=(0, 0, 0),  # (0, 255, 0)
-                    thickness=2
-                )
-                cv2.rectangle(
-                    img=img, 
-                    pt1=a_tl, 
-                    pt2=(a_tl[0] + a_text_w - 1, a_tl[1] + a_text_h - 1), 
-                    color=(0, 0, 0),  # (0, 255, 0)
-                    thickness=-1
-                )
-                cv2.putText(
-                    img=img,
-                    text=a_text,
-                    org=(a_tl[0], a_tl[1] + a_text_h - 1),
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.5,
-                    color=(255, 255, 255),  # (0, 255, 0)
-                    thickness=1,
-                    lineType=cv2.LINE_AA
-                )
-                # =================================================
+                if debug:
+                    # Display bbox for state mean vector after
+                    # applying the affine transformation.
+                    # =================================================
+                    a_text = f"A: {i + 1}"
+                    (a_text_w, a_text_h), _ = cv2.getTextSize(
+                        text=a_text,
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=0.5,
+                        thickness=1
+                    )
+                    a_tl, a_br = mean[:2], mean[2:4]
+                    a_tl = (int(a_tl[0]), int(a_tl[1]))
+                    a_br = (int(a_br[0]), int(a_br[1]))
+                    cv2.rectangle(
+                        img=img, 
+                        pt1=a_tl, 
+                        pt2=a_br, 
+                        color=(0, 0, 0),  # (0, 255, 0)
+                        thickness=2
+                    )
+                    cv2.rectangle(
+                        img=img, 
+                        pt1=a_tl, 
+                        pt2=(a_tl[0] + a_text_w - 1, a_tl[1] + a_text_h - 1), 
+                        color=(0, 0, 0),  # (0, 255, 0)
+                        thickness=-1
+                    )
+                    cv2.putText(
+                        img=img,
+                        text=a_text,
+                        org=(a_tl[0], a_tl[1] + a_text_h - 1),
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=0.5,
+                        color=(255, 255, 255),  # (0, 255, 0)
+                        thickness=1,
+                        lineType=cv2.LINE_AA
+                    )
+                    # =================================================
 
                 # Get transformed state covariance matrix.
                 cov = R8x8.dot(cov).dot(R8x8.transpose())
@@ -372,7 +374,7 @@ class KalmanBoxTracker(object):
                 stracks[i].kf.P = cov
 
     @staticmethod
-    def multi_gmc_lo_tc(stracks, H=np.eye(2, 3), img=None):
+    def multi_gmc_lo_tc(stracks, H=np.eye(2, 3), img=None, debug=False):
         # NOTE: Make changes to this method to account for
         # camera motion compensation while updating the
         # state of the tracklets.
@@ -384,44 +386,45 @@ class KalmanBoxTracker(object):
             t = H[:2, 2]
 
             for i, lo in enumerate(multi_lo):
-                # Display bbox for state mean vector before
-                # applying the affine transformation.
-                # =================================================
-                b_text = f"B: {i + 1}"
-                (b_text_w, b_text_h), _ = cv2.getTextSize(
-                    text=b_text,
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.5,
-                    thickness=1
-                )
-                b_tl, b_br = lo[:2], lo[2:4]
-                b_tl = (int(b_tl[0]), int(b_tl[1]))
-                b_br = (int(b_br[0]), int(b_br[1]))
-                cv2.rectangle(
-                    img=img, 
-                    pt1=b_tl, 
-                    pt2=b_br, 
-                    color=(255, 255, 255),  # (0, 255, 0)
-                    thickness=2
-                )
-                cv2.rectangle(
-                    img=img, 
-                    pt1=b_tl, 
-                    pt2=(b_tl[0] + b_text_w - 1, b_tl[1] + b_text_h - 1), 
-                    color=(255, 255, 255),  # (0, 255, 0)
-                    thickness=-1
-                )
-                cv2.putText(
-                    img=img,
-                    text=b_text,
-                    org=(b_tl[0], b_tl[1] + b_text_h - 1),
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.5,
-                    color=(0, 0, 0),  # (0, 255, 0)
-                    thickness=1,
-                    lineType=cv2.LINE_AA
-                )
-                # =================================================
+                if debug:
+                    # Display bbox for state mean vector before
+                    # applying the affine transformation.
+                    # =================================================
+                    b_text = f"B: {i + 1}"
+                    (b_text_w, b_text_h), _ = cv2.getTextSize(
+                        text=b_text,
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=0.5,
+                        thickness=1
+                    )
+                    b_tl, b_br = lo[:2], lo[2:4]
+                    b_tl = (int(b_tl[0]), int(b_tl[1]))
+                    b_br = (int(b_br[0]), int(b_br[1]))
+                    cv2.rectangle(
+                        img=img, 
+                        pt1=b_tl, 
+                        pt2=b_br, 
+                        color=(255, 255, 255),  # (0, 255, 0)
+                        thickness=2
+                    )
+                    cv2.rectangle(
+                        img=img, 
+                        pt1=b_tl, 
+                        pt2=(b_tl[0] + b_text_w - 1, b_tl[1] + b_text_h - 1), 
+                        color=(255, 255, 255),  # (0, 255, 0)
+                        thickness=-1
+                    )
+                    cv2.putText(
+                        img=img,
+                        text=b_text,
+                        org=(b_tl[0], b_tl[1] + b_text_h - 1),
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=0.5,
+                        color=(0, 0, 0),  # (0, 255, 0)
+                        thickness=1,
+                        lineType=cv2.LINE_AA
+                    )
+                    # =================================================
 
                 # Get transformed state last observation vector.
                 sub_lo = lo[:4]
@@ -430,44 +433,45 @@ class KalmanBoxTracker(object):
                 sub_lo[2:4] += t
                 lo[:4] = sub_lo[:4]
 
-                # Display bbox for state last observation vector after
-                # applying the affine transformation.
-                # =================================================
-                a_text = f"A: {i + 1}"
-                (a_text_w, a_text_h), _ = cv2.getTextSize(
-                    text=a_text,
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.5,
-                    thickness=1
-                )
-                a_tl, a_br = lo[:2], lo[2:4]
-                a_tl = (int(a_tl[0]), int(a_tl[1]))
-                a_br = (int(a_br[0]), int(a_br[1]))
-                cv2.rectangle(
-                    img=img, 
-                    pt1=a_tl, 
-                    pt2=a_br, 
-                    color=(0, 0, 0),  # (0, 255, 0)
-                    thickness=2
-                )
-                cv2.rectangle(
-                    img=img, 
-                    pt1=a_tl, 
-                    pt2=(a_tl[0] + a_text_w - 1, a_tl[1] + a_text_h - 1), 
-                    color=(0, 0, 0),  # (0, 255, 0)
-                    thickness=-1
-                )
-                cv2.putText(
-                    img=img,
-                    text=a_text,
-                    org=(a_tl[0], a_tl[1] + a_text_h - 1),
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.5,
-                    color=(255, 255, 255),  # (0, 255, 0)
-                    thickness=1,
-                    lineType=cv2.LINE_AA
-                )
-                # =================================================
+                if debug:
+                    # Display bbox for state last observation vector after
+                    # applying the affine transformation.
+                    # =================================================
+                    a_text = f"A: {i + 1}"
+                    (a_text_w, a_text_h), _ = cv2.getTextSize(
+                        text=a_text,
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=0.5,
+                        thickness=1
+                    )
+                    a_tl, a_br = lo[:2], lo[2:4]
+                    a_tl = (int(a_tl[0]), int(a_tl[1]))
+                    a_br = (int(a_br[0]), int(a_br[1]))
+                    cv2.rectangle(
+                        img=img, 
+                        pt1=a_tl, 
+                        pt2=a_br, 
+                        color=(0, 0, 0),  # (0, 255, 0)
+                        thickness=2
+                    )
+                    cv2.rectangle(
+                        img=img, 
+                        pt1=a_tl, 
+                        pt2=(a_tl[0] + a_text_w - 1, a_tl[1] + a_text_h - 1), 
+                        color=(0, 0, 0),  # (0, 255, 0)
+                        thickness=-1
+                    )
+                    cv2.putText(
+                        img=img,
+                        text=a_text,
+                        org=(a_tl[0], a_tl[1] + a_text_h - 1),
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=0.5,
+                        color=(255, 255, 255),  # (0, 255, 0)
+                        thickness=1,
+                        lineType=cv2.LINE_AA
+                    )
+                    # =================================================
 
                 stracks[i].last_observation = lo
 
@@ -584,8 +588,8 @@ class OCSORT_TC(object):
 
         # Fix camera motion.
         warp = self.cmc.apply(img, dets[:, :4])
-        KalmanBoxTracker.multi_gmc_tc(self.trackers, warp, img)
-        KalmanBoxTracker.multi_gmc_lo_tc(self.trackers, warp, img)
+        KalmanBoxTracker.multi_gmc_tc(self.trackers, warp, img, self.debug)
+        KalmanBoxTracker.multi_gmc_lo_tc(self.trackers, warp, img, self.debug)
 
         velocities = np.array(
             [
