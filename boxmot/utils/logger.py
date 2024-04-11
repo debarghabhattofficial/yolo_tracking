@@ -6,7 +6,7 @@ class Logger:
     def get_logger(name, level):
         time_format = "%m/%d/%Y-%H:%M:%S"
         formatter = logging.Formatter(
-            fmt="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s", 
+            fmt="[%(levelname)s] [%(asctime)s] [%(name)s]: %(message)s", 
             datefmt=time_format 
         )
         handler = logging.StreamHandler()
