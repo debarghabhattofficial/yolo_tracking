@@ -20,6 +20,7 @@ from boxmot.utils.ops import xywh2xyxy, xyxy2xywh
 # added by DEB to print average IoU and average
 # centroid distances for debugging purposes.
 # =======================================================
+import cv2
 from boxmot.utils.iou import iou_batch, centroid_batch
 import logging
 from boxmot.utils.logger import Logger
@@ -118,7 +119,7 @@ class STrack(BaseTrack):
                 stracks[i].covariance = cov
 
     @staticmethod
-    def multi_gmc(stracks, H=np.eye(2, 3)):
+    def multi_gmc(stracks, H=np.eye(2, 3), img=None, debug=False):
         if len(stracks) > 0:
             multi_mean = np.asarray([st.mean.copy() for st in stracks])
             multi_covariance = np.asarray([st.covariance for st in stracks])
@@ -128,8 +129,93 @@ class STrack(BaseTrack):
             t = H[:2, 2]
 
             for i, (mean, cov) in enumerate(zip(multi_mean, multi_covariance)):
+                if debug:
+                    # Display bbox for state mean vector before
+                    # applying the affine transformation.
+                    # =================================================
+                    b_text = f"B: {i + 1}"
+                    (b_text_w, b_text_h), _ = cv2.getTextSize(
+                        text=b_text,
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=0.5,
+                        thickness=1
+                    )
+                    b_mean_xyxy = xywh2xyxy(mean[:4])
+                    b_tl, b_br = b_mean_xyxy[:2], b_mean_xyxy[2:4]
+                    b_tl = (int(b_tl[0]), int(b_tl[1]))
+                    b_br = (int(b_br[0]), int(b_br[1]))
+                    cv2.rectangle(
+                        img=img, 
+                        pt1=b_tl, 
+                        pt2=b_br, 
+                        color=(255, 255, 255),  # (0, 255, 0)
+                        thickness=2
+                    )
+                    cv2.rectangle(
+                        img=img, 
+                        pt1=b_tl, 
+                        pt2=(b_tl[0] + b_text_w - 1, b_tl[1] + b_text_h - 1), 
+                        color=(255, 255, 255),  # (0, 255, 0)
+                        thickness=-1
+                    )
+                    cv2.putText(
+                        img=img,
+                        text=b_text,
+                        org=(b_tl[0], b_tl[1] + b_text_h - 1),
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=0.5,
+                        color=(0, 0, 0),  # (0, 255, 0)
+                        thickness=1,
+                        lineType=cv2.LINE_AA
+                    )
+                    # =================================================
+                
+                # Get transformed state mean vector.
                 mean = R8x8.dot(mean)
                 mean[:2] += t
+
+                if debug:
+                    # Display bbox for state mean vector after
+                    # applying the affine transformation.
+                    # =================================================
+                    a_text = f"A: {i + 1}"
+                    (a_text_w, a_text_h), _ = cv2.getTextSize(
+                        text=a_text,
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=0.5,
+                        thickness=1
+                    )
+                    a_mean_xyxy = xywh2xyxy(mean[:4])
+                    a_tl, a_br = a_mean_xyxy[:2], a_mean_xyxy[2:4]
+                    a_tl = (int(a_tl[0]), int(a_tl[1]))
+                    a_br = (int(a_br[0]), int(a_br[1]))
+                    cv2.rectangle(
+                        img=img, 
+                        pt1=a_tl, 
+                        pt2=a_br, 
+                        color=(0, 0, 0),  # (0, 255, 0)
+                        thickness=2
+                    )
+                    cv2.rectangle(
+                        img=img, 
+                        pt1=a_tl, 
+                        pt2=(a_tl[0] + a_text_w - 1, a_tl[1] + a_text_h - 1), 
+                        color=(0, 0, 0),  # (0, 255, 0)
+                        thickness=-1
+                    )
+                    cv2.putText(
+                        img=img,
+                        text=a_text,
+                        org=(a_tl[0], a_tl[1] + a_text_h - 1),
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=0.5,
+                        color=(255, 255, 255),  # (0, 255, 0)
+                        thickness=1,
+                        lineType=cv2.LINE_AA
+                    )
+                    # =================================================
+
+                # Get transformed state covariance matrix.
                 cov = R8x8.dot(cov).dot(R8x8.transpose())
 
                 stracks[i].mean = mean
@@ -310,8 +396,8 @@ class BoTSORT(object):
 
         # Fix camera motion
         warp = self.cmc.apply(img, dets_first)
-        STrack.multi_gmc(strack_pool, warp)
-        STrack.multi_gmc(unconfirmed, warp)
+        STrack.multi_gmc(strack_pool, warp, img=img, debug=self.debug)
+        STrack.multi_gmc(unconfirmed, warp, img=img, debug=self.debug)
 
         # Associate with high score detection boxes
         ious_dists = iou_distance(strack_pool, detections)
